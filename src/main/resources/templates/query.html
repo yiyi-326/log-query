@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日志查询</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">日志聚合查询系统</a>
+        <div class="navbar-nav">
+            <a class="nav-link" href="/">仪表盘</a>
+            <a class="nav-link active" href="/query">日志查询</a>
+            <a class="nav-link" href="/import">文件导入</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <h2 class="mb-4">日志查询</h2>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">关键词</label>
+                    <input type="text" id="keyword" class="form-control" placeholder="搜索日志内容...">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">级别</label>
+                    <select id="level" class="form-select">
+                        <option value="">全部</option>
+                        <option value="DEBUG">DEBUG</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARN">WARN</option>
+                        <option value="ERROR">ERROR</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">来源</label>
+                    <input type="text" id="source" class="form-control" placeholder="服务名...">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">每页条数</label>
+                    <select id="size" class="form-select">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">开始时间</label>
+                    <input type="datetime-local" id="startTime" class="form-control">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">结束时间</label>
+                    <input type="datetime-local" id="endTime" class="form-control">
+                </div>
+                <div class="col-md-6 d-flex align-items-end gap-2">
+                    <button class="btn btn-primary" onclick="search(0)">搜索</button>
+                    <button class="btn btn-outline-secondary" onclick="resetFilters()">重置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="text-center d-none">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p>查询中...</p>
+    </div>
+
+    <div id="errorMsg" class="alert alert-danger d-none"></div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead><tr>
+                <th style="width:170px">时间</th>
+                <th style="width:80px">级别</th>
+                <th style="width:150px">来源</th>
+                <th>内容</th>
+            </tr></thead>
+            <tbody id="logBody"><tr><td colspan="4" class="text-center text-muted">点击搜索查看日志</td></tr></tbody>
+        </table>
+    </div>
+
+    <nav id="pagination" class="d-none">
+        <ul class="pagination justify-content-center" id="pageLinks"></ul>
+    </nav>
+    <small class="text-muted" id="totalInfo"></small>
+</div>
+
+<script>
+    let currentPage = 0;
+
+    function resetFilters() {
+        document.querySelectorAll('#keyword, #source, #startTime, #endTime').forEach(e => e.value = '');
+        document.getElementById('level').value = '';
+        document.getElementById('size').value = '20';
+    }
+
+    function search(page) {
+        currentPage = page;
+        document.getElementById('loading').classList.remove('d-none');
+        document.getElementById('errorMsg').classList.add('d-none');
+
+        const params = new URLSearchParams();
+        const add = (k, v) => { if (v) params.append(k, v); };
+
+        add('keyword', document.getElementById('keyword').value);
+        add('level', document.getElementById('level').value);
+        add('source', document.getElementById('source').value);
+        if (document.getElementById('startTime').value) {
+            params.append('startTime', document.getElementById('startTime').value + ':00');
+        }
+        if (document.getElementById('endTime').value) {
+            params.append('endTime', document.getElementById('endTime').value + ':00');
+        }
+        params.append('page', page);
+        params.append('size', document.getElementById('size').value);
+
+        fetch('/api/v1/logs?' + params.toString())
+            .then(r => r.json())
+            .then(resp => {
+                document.getElementById('loading').classList.add('d-none');
+                if (!resp.success) {
+                    showError(resp.message);
+                    return;
+                }
+                renderTable(resp.data.content);
+                renderPagination(resp.data);
+                document.getElementById('totalInfo').textContent =
+                    '共 ' + resp.data.totalElements + ' 条, 第 ' + (resp.data.currentPage + 1) + '/' + resp.data.totalPages + ' 页';
+            })
+            .catch(e => showError('请求失败: ' + e.message));
+    }
+
+    function renderTable(logs) {
+        const tbody = document.getElementById('logBody');
+        if (!logs || logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">无匹配日志</td></tr>';
+            return;
+        }
+        tbody.innerHTML = logs.map(l => {
+            const badge = {ERROR:'danger',WARN:'warning',INFO:'info',DEBUG:'secondary'}[l.level] || 'secondary';
+            return '<tr><td><small>' + (l.timestamp || '') + '</small></td>' +
+                '<td><span class="badge bg-' + badge + '">' + l.level + '</span></td>' +
+                '<td>' + escapeHtml(l.source || '') + '</td>' +
+                '<td>' + escapeHtml(l.message || '') + '</td></tr>';
+        }).join('');
+    }
+
+    function renderPagination(data) {
+        const nav = document.getElementById('pagination');
+        const links = document.getElementById('pageLinks');
+        if (data.totalPages <= 1) { nav.classList.add('d-none'); return; }
+        nav.classList.remove('d-none');
+
+        let html = '';
+        html += pageLink(currentPage - 1, '上一页', currentPage === 0);
+        for (let i = 0; i < data.totalPages; i++) {
+            html += pageLink(i, i + 1, i === currentPage);
+        }
+        html += pageLink(currentPage + 1, '下一页', currentPage >= data.totalPages - 1);
+        links.innerHTML = html;
+    }
+
+    function pageLink(page, label, disabled) {
+        const cls = disabled ? 'page-item disabled' : (page === currentPage ? 'page-item active' : 'page-item');
+        return '<li class="' + cls + '"><a class="page-link" href="#" onclick="search(' + page + ')" style="cursor:pointer">' + label + '</a></li>';
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorMsg');
+        el.textContent = msg;
+        el.classList.remove('d-none');
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

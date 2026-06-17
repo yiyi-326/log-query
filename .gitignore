@@ -1,0 +1,13 @@
+target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+.idea/
+*.iml
+data/
+*.db
+*.mv.db
+*.trace.db
+*.log
+*.tmp

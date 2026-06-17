@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日志聚合查询系统 - 仪表盘</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">日志聚合查询系统</a>
+        <div class="navbar-nav">
+            <a class="nav-link active" href="/">仪表盘</a>
+            <a class="nav-link" href="/query">日志查询</a>
+            <a class="nav-link" href="/import">文件导入</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <h2 class="mb-4">仪表盘</h2>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-bg-primary">
+                <div class="card-body text-center">
+                    <h5 class="card-title">日志总数</h5>
+                    <p class="display-6" th:text="${stats.totalCount}">0</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-bg-success">
+                <div class="card-body text-center">
+                    <h5 class="card-title">今日新增</h5>
+                    <p class="display-6" th:text="${stats.todayCount}">0</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-bg-warning">
+                <div class="card-body text-center">
+                    <h5 class="card-title">ERROR 今日</h5>
+                    <p class="display-6" th:text="${stats.levelDistribution['ERROR']}">0</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-bg-danger">
+                <div class="card-body text-center">
+                    <h5 class="card-title">WARN 今日</h5>
+                    <p class="display-6" th:text="${stats.levelDistribution['WARN']}">0</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">日志级别分布</div>
+                <div class="card-body">
+                    <div class="mb-2" th:each="entry : ${stats.levelDistribution}">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span><span th:class="'badge ' + (${entry.key == 'ERROR'} ? 'bg-danger' : (${entry.key == 'WARN'} ? 'bg-warning text-dark' : (${entry.key == 'INFO'} ? 'bg-info text-dark' : 'bg-secondary')))" th:text="${entry.key}">INFO</span></span>
+                            <small th:text="${entry.value}">0</small>
+                        </div>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar"
+                                 th:class="'progress-bar ' + (${entry.key == 'ERROR'} ? 'bg-danger' : (${entry.key == 'WARN'} ? 'bg-warning' : (${entry.key == 'INFO'} ? 'bg-info' : 'bg-secondary')))"
+                                 th:style="'width:' + (${stats.totalCount > 0} ? ${(entry.value * 100.0 / stats.totalCount)} : 0) + '%'"
+                                 th:attr="aria-valuenow=${entry.value}">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">日志来源 TOP 10</div>
+                <div class="card-body">
+                    <table class="table table-sm" th:if="${not #lists.isEmpty(stats.topSources)}">
+                        <thead><tr><th>#</th><th>来源</th><th>数量</th></tr></thead>
+                        <tbody>
+                            <tr th:each="sc, iter : ${stats.topSources}">
+                                <td th:text="${iter.index + 1}">1</td>
+                                <td th:text="${sc.source}">source</td>
+                                <td th:text="${sc.count}">0</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="text-muted" th:if="${#lists.isEmpty(stats.topSources)}">暂无数据</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">今日每小时趋势</div>
+        <div class="card-body">
+            <div th:if="${not #lists.isEmpty(stats.hourlyTrend)}" style="display:flex; align-items:flex-end; gap:2px; height:120px;">
+                <div th:each="h : ${stats.hourlyTrend}"
+                     th:style="'flex:1; height:' + (${stats.todayCount > 0} ? ${(h.count * 100.0 / stats.todayCount) * 0.8 + 20} : 2) + 'px;'"
+                     class="bg-primary rounded-top"
+                     th:title="${h.hour} + ': ' + ${h.count} + ' 条'">
+                </div>
+            </div>
+            <div class="d-flex justify-content-between mt-2">
+                <small th:text="${#lists.isEmpty(stats.hourlyTrend) ? '' : stats.hourlyTrend[0].hour}">00:00</small>
+                <small th:text="${#lists.isEmpty(stats.hourlyTrend) ? '' : stats.hourlyTrend[stats.hourlyTrend.size()-1].hour}">23:00</small>
+            </div>
+            <p class="text-muted" th:if="${#lists.isEmpty(stats.hourlyTrend)}">暂无数小时趋势数据</p>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件导入</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">日志聚合查询系统</a>
+        <div class="navbar-nav">
+            <a class="nav-link" href="/">仪表盘</a>
+            <a class="nav-link" href="/query">日志查询</a>
+            <a class="nav-link active" href="/import">文件导入</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <h2 class="mb-4">文件导入日志</h2>
+
+    <div class="card mb-4">
+        <div class="card-header">上传日志文件</div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label">选择日志文件 (.log / .txt / .jsonl)</label>
+                <input type="file" id="fileInput" class="form-control" accept=".log,.txt,.jsonl,.json">
+            </div>
+            <div class="mb-3">
+                <h6>支持的格式：</h6>
+                <ul class="small text-muted">
+                    <li><b>JSON 行格式</b>：每行一个 JSON 对象 <code>{"timestamp":"2026-06-17T10:30:00","level":"ERROR","source":"order-service","message":"超时"}</code></li>
+                    <li><b>常见日志格式</b>：<code>2026-06-17 10:30:00 [ERROR] order-service - 连接超时</code></li>
+                </ul>
+            </div>
+            <button class="btn btn-primary" onclick="previewFile()">解析预览</button>
+        </div>
+    </div>
+
+    <div id="previewSection" class="card mb-4 d-none">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>解析预览 <span id="previewCount" class="badge bg-secondary">0</span> 条</span>
+            <button class="btn btn-success btn-sm" onclick="confirmImport()">确认导入全部</button>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-sm">
+                    <thead><tr><th>#</th><th>时间</th><th>级别</th><th>来源</th><th>内容</th></tr></thead>
+                    <tbody id="previewBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="text-center d-none">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p id="loadingMsg">处理中...</p>
+    </div>
+
+    <div id="resultMsg" class="alert d-none"></div>
+</div>
+
+<script>
+    let parsedCount = 0;
+    let selectedFile = null;
+
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+        selectedFile = e.target.files[0];
+    });
+
+    function previewFile() {
+        if (!selectedFile) { showResult('warning', '请先选择文件'); return; }
+
+        document.getElementById('loading').classList.remove('d-none');
+        document.getElementById('loadingMsg').textContent = '正在解析文件...';
+        document.getElementById('resultMsg').classList.add('d-none');
+        document.getElementById('previewSection').classList.add('d-none');
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        fetch('/api/v1/logs/import?preview=true', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(resp => {
+                document.getElementById('loading').classList.add('d-none');
+                // Preview: we parse locally since the import endpoint does full import
+                // For full import, we'll call again without preview
+            });
+
+        // Parse and preview locally - do a preliminary parse by reading file
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const lines = e.target.result.split('\n').filter(l => l.trim());
+            const preview = [];
+            const jsonPattern = /\{"timestamp".*"message".*\}/;
+
+            for (let i = 0; i < Math.min(lines.length, 20); i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                try {
+                    if (line.startsWith('{')) {
+                        const obj = JSON.parse(line);
+                        preview.push({ts: obj.timestamp || '', lv: obj.level || '', src: obj.source || '', msg: obj.message || ''});
+                    } else {
+                        const m = line.match(/^(\d{4}[-/]\d{1,2}[-/]\d{1,2}[T ]\d{1,2}:\d{2}:\d{2}(?:\.\d{3})?)\s*\[?(DEBUG|INFO|WARN(?:ING)?|ERROR|TRACE)\]?\s*(\S+)?\s*[-:]?\s*(.*)$/i);
+                        if (m) {
+                            preview.push({ts: m[1], lv: m[2].toUpperCase(), src: m[3] || 'unknown', msg: m[4]});
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            parsedCount = lines.filter(l => {
+                const tl = l.trim();
+                return tl.startsWith('{') || tl.match(/^\d{4}[-/]/);
+            }).length;
+
+            document.getElementById('previewCount').textContent = parsedCount;
+            const tbody = document.getElementById('previewBody');
+            if (preview.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">无法识别日志格式</td></tr>';
+            } else {
+                tbody.innerHTML = preview.map((p, i) => {
+                    const badge = {ERROR:'danger',WARN:'warning',INFO:'info',DEBUG:'secondary'}[p.lv] || 'secondary';
+                    return '<tr><td>' + (i + 1) + '</td><td><small>' + escapeHtml(p.ts) + '</small></td>' +
+                        '<td><span class="badge bg-' + badge + '">' + p.lv + '</span></td>' +
+                        '<td>' + escapeHtml(p.src) + '</td><td>' + escapeHtml(p.msg) + '</td></tr>';
+                }).join('');
+                if (parsedCount > 20) {
+                    tbody.innerHTML += '<tr><td colspan="5" class="text-center text-muted">... 还有 ' + (parsedCount - 20) + ' 条</td></tr>';
+                }
+            }
+            document.getElementById('previewSection').classList.remove('d-none');
+        };
+        reader.readAsText(selectedFile);
+    }
+
+    function confirmImport() {
+        if (!selectedFile) { showResult('warning', '请先选择文件'); return; }
+
+        document.getElementById('loading').classList.remove('d-none');
+        document.getElementById('loadingMsg').textContent = '正在导入...';
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        fetch('/api/v1/logs/import', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(resp => {
+                document.getElementById('loading').classList.add('d-none');
+                if (resp.success) {
+                    showResult('success', '导入成功！共导入 ' + resp.data.imported + ' 条日志');
+                    document.getElementById('previewSection').classList.add('d-none');
+                    document.getElementById('fileInput').value = '';
+                    selectedFile = null;
+                } else {
+                    showResult('danger', '导入失败: ' + resp.message);
+                }
+            })
+            .catch(e => {
+                document.getElementById('loading').classList.add('d-none');
+                showResult('danger', '请求失败: ' + e.message);
+            });
+    }
+
+    function showResult(type, msg) {
+        const el = document.getElementById('resultMsg');
+        el.className = 'alert alert-' + type;
+        el.textContent = msg;
+        el.classList.remove('d-none');
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
