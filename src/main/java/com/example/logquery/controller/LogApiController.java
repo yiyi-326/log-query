@@ -105,3 +105,4 @@ public class LogApiController {
         return ApiResponse.success("删除了 " + deleted + " 条日志", Map.of("deleted", deleted));
     }
 }
+

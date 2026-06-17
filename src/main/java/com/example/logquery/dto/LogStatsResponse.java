@@ -41,3 +41,4 @@ public class LogStatsResponse {
         public long getCount() { return count; }
     }
 }
+
