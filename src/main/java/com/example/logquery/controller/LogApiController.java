@@ -8,6 +8,9 @@ import com.example.logquery.service.LogImportService;
 import com.example.logquery.service.LogService;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -45,6 +48,9 @@ public class LogApiController {
     @GetMapping
     public ApiResponse<Map<String, Object>> query(
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) List<String> keywords,
+            @RequestParam(required = false, defaultValue = "OR") String keywordLogic,
+            @RequestParam(required = false) String regex,
             @RequestParam(required = false) String level,
             @RequestParam(required = false) String source,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
@@ -54,6 +60,9 @@ public class LogApiController {
 
         LogQueryRequest req = new LogQueryRequest();
         req.setKeyword(keyword);
+        req.setKeywords(keywords);
+        req.setKeywordLogic(keywordLogic);
+        req.setRegex(regex);
         req.setLevel(level);
         req.setSource(source);
         req.setStartTime(startTime);
@@ -70,6 +79,46 @@ public class LogApiController {
                 "size", result.getSize()
         );
         return ApiResponse.success(data);
+    }
+
+    @GetMapping("/export")
+    public ResponseEntity<?> export(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) List<String> keywords,
+            @RequestParam(required = false, defaultValue = "OR") String keywordLogic,
+            @RequestParam(required = false) String regex,
+            @RequestParam(required = false) String level,
+            @RequestParam(required = false) String source,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
+            @RequestParam(defaultValue = "csv") String format) {
+
+        LogQueryRequest req = new LogQueryRequest();
+        req.setKeyword(keyword);
+        req.setKeywords(keywords);
+        req.setKeywordLogic(keywordLogic);
+        req.setRegex(regex);
+        req.setLevel(level);
+        req.setSource(source);
+        req.setStartTime(startTime);
+        req.setEndTime(endTime);
+        req.setPage(0);
+        req.setSize(Integer.MAX_VALUE);
+
+        List<LogEntry> logs = logService.queryAll(req);
+
+        if ("json".equalsIgnoreCase(format)) {
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=logs-export.json")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(ApiResponse.success(logs));
+        } else {
+            String csv = logService.exportCsv(logs);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=logs-export.csv")
+                    .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                    .body(csv);
+        }
     }
 
     @GetMapping("/stats")
@@ -105,4 +154,3 @@ public class LogApiController {
         return ApiResponse.success("删除了 " + deleted + " 条日志", Map.of("deleted", deleted));
     }
 }
-

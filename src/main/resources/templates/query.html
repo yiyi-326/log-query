@@ -23,11 +23,39 @@
 
     <div class="card mb-4">
         <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">关键词</label>
-                    <input type="text" id="keyword" class="form-control" placeholder="搜索日志内容...">
+            <!-- 时间快捷按钮 -->
+            <div class="mb-3">
+                <label class="form-label fw-bold">快捷时间</label>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-info btn-sm" onclick="setTimePreset('today')">今天</button>
+                    <button type="button" class="btn btn-outline-info btn-sm" onclick="setTimePreset('7d')">近 7 天</button>
+                    <button type="button" class="btn btn-outline-info btn-sm" onclick="setTimePreset('30d')">近 30 天</button>
                 </div>
+            </div>
+
+            <div class="row g-3">
+                <!-- 多关键词 -->
+                <div class="col-md-4">
+                    <label class="form-label">关键词（空格分隔）</label>
+                    <input type="text" id="keywords" class="form-control" placeholder="多个关键词用空格分隔...">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">组合逻辑</label>
+                    <select id="keywordLogic" class="form-select">
+                        <option value="OR">OR（任一匹配）</option>
+                        <option value="AND">AND（全部匹配）</option>
+                    </select>
+                </div>
+                <!-- 正则表达式 -->
+                <div class="col-md-3">
+                    <label class="form-label">正则表达式</label>
+                    <input type="text" id="regex" class="form-control" placeholder="如: error.*timeout">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">来源</label>
+                    <input type="text" id="source" class="form-control" placeholder="服务名...">
+                </div>
+                <!-- 级别 + 每页条数 -->
                 <div class="col-md-2">
                     <label class="form-label">级别</label>
                     <select id="level" class="form-select">
@@ -38,11 +66,7 @@
                         <option value="ERROR">ERROR</option>
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">来源</label>
-                    <input type="text" id="source" class="form-control" placeholder="服务名...">
-                </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label">每页条数</label>
                     <select id="size" class="form-select">
                         <option value="10">10</option>
@@ -51,6 +75,7 @@
                         <option value="100">100</option>
                     </select>
                 </div>
+                <!-- 时间范围 -->
                 <div class="col-md-3">
                     <label class="form-label">开始时间</label>
                     <input type="datetime-local" id="startTime" class="form-control">
@@ -59,9 +84,14 @@
                     <label class="form-label">结束时间</label>
                     <input type="datetime-local" id="endTime" class="form-control">
                 </div>
+                <!-- 操作按钮 -->
                 <div class="col-md-6 d-flex align-items-end gap-2">
                     <button class="btn btn-primary" onclick="search(0)">搜索</button>
                     <button class="btn btn-outline-secondary" onclick="resetFilters()">重置</button>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-success" onclick="exportData('csv')">导出 CSV</button>
+                        <button class="btn btn-outline-success" onclick="exportData('json')">导出 JSON</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -95,21 +125,43 @@
 <script>
     let currentPage = 0;
 
+    function setTimePreset(preset) {
+        const now = new Date();
+        const toLocalStr = (d) => d.toISOString().slice(0, 16); // "yyyy-MM-ddTHH:mm"
+
+        let start;
+        if (preset === 'today') {
+            start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        } else if (preset === '7d') {
+            start = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+        } else if (preset === '30d') {
+            start = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+        }
+
+        document.getElementById('startTime').value = toLocalStr(start);
+        document.getElementById('endTime').value = toLocalStr(now);
+        search(0);
+    }
+
     function resetFilters() {
-        document.querySelectorAll('#keyword, #source, #startTime, #endTime').forEach(e => e.value = '');
+        document.querySelectorAll('#keywords, #regex, #source, #startTime, #endTime').forEach(e => e.value = '');
+        document.getElementById('keywordLogic').value = 'OR';
         document.getElementById('level').value = '';
         document.getElementById('size').value = '20';
     }
 
-    function search(page) {
-        currentPage = page;
-        document.getElementById('loading').classList.remove('d-none');
-        document.getElementById('errorMsg').classList.add('d-none');
-
+    function buildParams(page) {
         const params = new URLSearchParams();
         const add = (k, v) => { if (v) params.append(k, v); };
 
-        add('keyword', document.getElementById('keyword').value);
+        // 多关键词
+        const kwStr = document.getElementById('keywords').value.trim();
+        if (kwStr) {
+            kwStr.split(/\s+/).forEach(k => params.append('keywords', k));
+            add('keywordLogic', document.getElementById('keywordLogic').value);
+        }
+
+        add('regex', document.getElementById('regex').value);
         add('level', document.getElementById('level').value);
         add('source', document.getElementById('source').value);
         if (document.getElementById('startTime').value) {
@@ -120,6 +172,15 @@
         }
         params.append('page', page);
         params.append('size', document.getElementById('size').value);
+        return params;
+    }
+
+    function search(page) {
+        currentPage = page;
+        document.getElementById('loading').classList.remove('d-none');
+        document.getElementById('errorMsg').classList.add('d-none');
+
+        const params = buildParams(page);
 
         fetch('/api/v1/logs?' + params.toString())
             .then(r => r.json())
@@ -135,6 +196,20 @@
                     '共 ' + resp.data.totalElements + ' 条, 第 ' + (resp.data.currentPage + 1) + '/' + resp.data.totalPages + ' 页';
             })
             .catch(e => showError('请求失败: ' + e.message));
+    }
+
+    function exportData(format) {
+        const params = buildParams(0);
+        params.set('size', '100000');
+        params.set('format', format);
+
+        const url = '/api/v1/logs/export?' + params.toString();
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
     }
 
     function renderTable(logs) {
@@ -187,4 +262,3 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-

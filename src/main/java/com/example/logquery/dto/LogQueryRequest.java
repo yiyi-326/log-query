@@ -1,9 +1,13 @@
 package com.example.logquery.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class LogQueryRequest {
     private String keyword;
+    private List<String> keywords;
+    private String keywordLogic = "OR";
+    private String regex;
     private String level;
     private String source;
     private LocalDateTime startTime;
@@ -13,6 +17,15 @@ public class LogQueryRequest {
 
     public String getKeyword() { return keyword; }
     public void setKeyword(String keyword) { this.keyword = keyword; }
+
+    public List<String> getKeywords() { return keywords; }
+    public void setKeywords(List<String> keywords) { this.keywords = keywords; }
+
+    public String getKeywordLogic() { return keywordLogic; }
+    public void setKeywordLogic(String keywordLogic) { this.keywordLogic = keywordLogic; }
+
+    public String getRegex() { return regex; }
+    public void setRegex(String regex) { this.regex = regex; }
 
     public String getLevel() { return level; }
     public void setLevel(String level) { this.level = level; }
@@ -32,4 +45,3 @@ public class LogQueryRequest {
     public int getSize() { return size; }
     public void setSize(int size) { this.size = size; }
 }
-

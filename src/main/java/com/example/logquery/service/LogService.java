@@ -40,11 +40,7 @@ public class LogService {
 
     @Transactional
     public List<LogEntry> saveBatch(List<LogEntry> entries) {
-        List<LogEntry> result = new ArrayList<>();
-        for (LogEntry entry : entries) {
-            result.add(save(entry));
-        }
-        return result;
+        return repository.saveAll(entries);
     }
 
     public Page<LogEntry> query(LogQueryRequest request) {
@@ -54,6 +50,11 @@ public class LogService {
                 Sort.by(Sort.Direction.DESC, "timestamp")
         );
         return repository.findAll(spec, pageRequest);
+    }
+
+    public List<LogEntry> queryAll(LogQueryRequest request) {
+        Specification<LogEntry> spec = buildSpecification(request);
+        return repository.findAll(spec, Sort.by(Sort.Direction.DESC, "timestamp"));
     }
 
     private Specification<LogEntry> buildSpecification(LogQueryRequest req) {
@@ -72,7 +73,36 @@ public class LogService {
             if (req.getEndTime() != null) {
                 predicates.add(cb.lessThanOrEqualTo(root.get("timestamp"), req.getEndTime()));
             }
-            if (req.getKeyword() != null && !req.getKeyword().isBlank()) {
+
+            // 正则表达式搜索
+            if (req.getRegex() != null && !req.getRegex().isBlank()) {
+                String pattern = req.getRegex().trim();
+                predicates.add(cb.or(
+                        cb.isTrue(cb.function("REGEXP_LIKE", Boolean.class,
+                                root.get("message"), cb.literal(pattern))),
+                        cb.isTrue(cb.function("REGEXP_LIKE", Boolean.class,
+                                root.get("source"), cb.literal(pattern)))
+                ));
+            }
+
+            // 多关键词组合搜索
+            List<String> kwList = buildKeywordList(req);
+            if (!kwList.isEmpty()) {
+                String logic = "AND".equalsIgnoreCase(req.getKeywordLogic()) ? "AND" : "OR";
+                List<Predicate> kwPredicates = new ArrayList<>();
+                for (String kw : kwList) {
+                    String pattern = "%" + kw.toLowerCase() + "%";
+                    kwPredicates.add(cb.or(
+                            cb.like(cb.lower(root.get("message")), pattern),
+                            cb.like(cb.lower(root.get("source")), pattern)
+                    ));
+                }
+                if ("AND".equals(logic)) {
+                    predicates.add(cb.and(kwPredicates.toArray(new Predicate[0])));
+                } else {
+                    predicates.add(cb.or(kwPredicates.toArray(new Predicate[0])));
+                }
+            } else if (req.getKeyword() != null && !req.getKeyword().isBlank()) {
                 String kw = "%" + req.getKeyword().trim().toLowerCase() + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("message")), kw),
@@ -84,6 +114,18 @@ public class LogService {
         };
     }
 
+    private List<String> buildKeywordList(LogQueryRequest req) {
+        List<String> result = new ArrayList<>();
+        if (req.getKeywords() != null) {
+            for (String k : req.getKeywords()) {
+                if (k != null && !k.isBlank()) {
+                    result.add(k.trim());
+                }
+            }
+        }
+        return result;
+    }
+
     public LogStatsResponse getStats() {
         LocalDateTime todayStart = LocalDateTime.of(LocalDate.now(), LocalTime.MIN);
         LogStatsResponse stats = new LogStatsResponse();
@@ -91,7 +133,6 @@ public class LogService {
         stats.setTotalCount(repository.count());
         stats.setTodayCount(repository.countByTimestampAfter(todayStart));
 
-        // 级别分布
         Map<String, Long> levelDist = new LinkedHashMap<>();
         levelDist.put("DEBUG", 0L);
         levelDist.put("INFO", 0L);
@@ -102,14 +143,12 @@ public class LogService {
         }
         stats.setLevelDistribution(levelDist);
 
-        // 来源 TOP 10
         List<Object[]> sourceRows = repository.countBySource();
         stats.setTopSources(sourceRows.stream()
                 .limit(10)
                 .map(row -> new LogStatsResponse.SourceCount((String) row[0], (Long) row[1]))
                 .collect(Collectors.toList()));
 
-        // 今日每小时趋势
         Map<String, Long> hourlyMap = new LinkedHashMap<>();
         for (int h = 0; h < 24; h++) {
             hourlyMap.put(String.format("%02d:00", h), 0L);
@@ -124,6 +163,26 @@ public class LogService {
                 .collect(Collectors.toList()));
 
         return stats;
+    }
+
+    public String exportCsv(List<LogEntry> logs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("时间,级别,来源,内容\r\n");
+        for (LogEntry e : logs) {
+            sb.append(escapeCsv(e.getTimestamp() != null ? e.getTimestamp().toString() : "")).append(',');
+            sb.append(escapeCsv(e.getLevel())).append(',');
+            sb.append(escapeCsv(e.getSource())).append(',');
+            sb.append(escapeCsv(e.getMessage())).append("\r\n");
+        }
+        return sb.toString();
+    }
+
+    private String escapeCsv(String value) {
+        if (value == null) return "";
+        if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
+            return "\"" + value.replace("\"", "\"\"") + "\"";
+        }
+        return value;
     }
 
     @Transactional
