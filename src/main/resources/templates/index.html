@@ -5,6 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>日志聚合查询系统 - 仪表盘</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        .stat-card { transition: box-shadow 0.3s, border-color 0.3s; }
+        .stat-card.alert-threshold {
+            animation: pulse-border 1.5s infinite;
+        }
+        @keyframes pulse-border {
+            0%, 100% { box-shadow: 0 0 5px rgba(220,53,69,0.4); }
+            50% { box-shadow: 0 0 20px rgba(220,53,69,0.9); }
+        }
+        .error-scroller {
+            max-height: 360px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+        }
+        .error-scroller .error-row {
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            transition: background 0.2s;
+        }
+        .error-scroller .error-row:hover {
+            background: rgba(255,255,255,0.08);
+        }
+        .error-scroller::-webkit-scrollbar { width: 6px; }
+        .error-scroller::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+        .alert-bar { transition: opacity 0.5s; }
+    </style>
 </head>
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
@@ -18,105 +44,294 @@
     </div>
 </nav>
 
-<div class="container mt-4">
-    <h2 class="mb-4">仪表盘</h2>
-
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card text-bg-primary">
-                <div class="card-body text-center">
-                    <h5 class="card-title">日志总数</h5>
-                    <p class="display-6" th:text="${stats.totalCount}">0</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-bg-success">
-                <div class="card-body text-center">
-                    <h5 class="card-title">今日新增</h5>
-                    <p class="display-6" th:text="${stats.todayCount}">0</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-bg-warning">
-                <div class="card-body text-center">
-                    <h5 class="card-title">ERROR 今日</h5>
-                    <p class="display-6" th:text="${stats.levelDistribution['ERROR']}">0</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-bg-danger">
-                <div class="card-body text-center">
-                    <h5 class="card-title">WARN 今日</h5>
-                    <p class="display-6" th:text="${stats.levelDistribution['WARN']}">0</p>
-                </div>
-            </div>
-        </div>
+<div class="container-fluid mt-4 px-4">
+    <!-- 告警条 -->
+    <div id="alertBar" class="alert alert-danger d-flex align-items-center alert-bar d-none" role="alert">
+        <span class="me-2">&#9888;</span>
+        <span id="alertText"></span>
     </div>
 
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">日志级别分布</div>
-                <div class="card-body">
-                    <div class="mb-2" th:each="entry : ${stats.levelDistribution}">
-                        <div class="d-flex justify-content-between mb-1">
-                            <span><span th:class="'badge ' + (${entry.key == 'ERROR'} ? 'bg-danger' : (${entry.key == 'WARN'} ? 'bg-warning text-dark' : (${entry.key == 'INFO'} ? 'bg-info text-dark' : 'bg-secondary')))" th:text="${entry.key}">INFO</span></span>
-                            <small th:text="${entry.value}">0</small>
+    <!-- 统计卡片 + 控制面板 -->
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <div class="row g-3">
+                <div class="col-sm-3">
+                    <div class="card text-bg-primary stat-card" id="cardTotal">
+                        <div class="card-body text-center py-3">
+                            <h6 class="card-title mb-1">日志总数</h6>
+                            <p class="display-6 mb-0" id="valTotalCount">--</p>
                         </div>
-                        <div class="progress" style="height: 20px;">
-                            <div class="progress-bar"
-                                 th:class="'progress-bar ' + (${entry.key == 'ERROR'} ? 'bg-danger' : (${entry.key == 'WARN'} ? 'bg-warning' : (${entry.key == 'INFO'} ? 'bg-info' : 'bg-secondary')))"
-                                 th:style="'width:' + (${stats.totalCount > 0} ? ${(entry.value * 100.0 / stats.totalCount)} : 0) + '%'"
-                                 th:attr="aria-valuenow=${entry.value}">
-                            </div>
+                    </div>
+                </div>
+                <div class="col-sm-3">
+                    <div class="card text-bg-success stat-card" id="cardToday">
+                        <div class="card-body text-center py-3">
+                            <h6 class="card-title mb-1">今日新增</h6>
+                            <p class="display-6 mb-0" id="valTodayCount">--</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-3">
+                    <div class="card text-bg-danger stat-card" id="cardError">
+                        <div class="card-body text-center py-3">
+                            <h6 class="card-title mb-1">ERROR</h6>
+                            <p class="display-6 mb-0" id="valErrorCount">--</p>
+                            <small id="valErrorRate">--</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-3">
+                    <div class="card text-bg-warning stat-card" id="cardWarn">
+                        <div class="card-body text-center py-3">
+                            <h6 class="card-title mb-1">WARN</h6>
+                            <p class="display-6 mb-0" id="valWarnCount">--</p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">日志来源 TOP 10</div>
+        <!-- 控制面板 -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header fw-bold">控制面板</div>
                 <div class="card-body">
-                    <table class="table table-sm" th:if="${not #lists.isEmpty(stats.topSources)}">
-                        <thead><tr><th>#</th><th>来源</th><th>数量</th></tr></thead>
-                        <tbody>
-                            <tr th:each="sc, iter : ${stats.topSources}">
-                                <td th:text="${iter.index + 1}">1</td>
-                                <td th:text="${sc.source}">source</td>
-                                <td th:text="${sc.count}">0</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <p class="text-muted" th:if="${#lists.isEmpty(stats.topSources)}">暂无数据</p>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small">错误率告警阈值</label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" id="threshold" class="form-control" value="10" min="0" max="100">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">刷新间隔</label>
+                            <select id="refreshInterval" class="form-select form-select-sm">
+                                <option value="0">关闭</option>
+                                <option value="10">10 秒</option>
+                                <option value="30" selected>30 秒</option>
+                                <option value="60">60 秒</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 align-items-center">
+                        <button id="btnRefresh" class="btn btn-sm btn-primary" onclick="refreshDashboard()">立即刷新</button>
+                        <span class="small text-muted" id="lastRefresh"></span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-header">今日每小时趋势</div>
-        <div class="card-body">
-            <div th:if="${not #lists.isEmpty(stats.hourlyTrend)}" style="display:flex; align-items:flex-end; gap:2px; height:120px;">
-                <div th:each="h : ${stats.hourlyTrend}"
-                     th:style="'flex:1; height:' + (${stats.todayCount > 0} ? ${(h.count * 100.0 / stats.todayCount) * 0.8 + 20} : 2) + 'px;'"
-                     class="bg-primary rounded-top"
-                     th:title="${h.hour} + ': ' + ${h.count} + ' 条'">
+    <!-- 图表行 -->
+    <div class="row mb-4">
+        <div class="col-lg-5">
+            <div class="card">
+                <div class="card-header fw-bold">日志级别分布</div>
+                <div class="card-body"><div id="pieChart" style="height:300px;"></div></div>
+            </div>
+        </div>
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header fw-bold">今日每小时趋势</div>
+                <div class="card-body"><div id="lineChart" style="height:300px;"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 来源 TOP 10 + 最近错误日志 -->
+    <div class="row">
+        <div class="col-lg-5">
+            <div class="card">
+                <div class="card-header fw-bold">日志来源 TOP 10</div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-hover mb-0" id="sourceTable">
+                        <thead><tr><th>#</th><th>来源</th><th>数量</th></tr></thead>
+                        <tbody id="sourceBody"><tr><td colspan="3" class="text-center text-muted">加载中...</td></tr></tbody>
+                    </table>
                 </div>
             </div>
-            <div class="d-flex justify-content-between mt-2">
-                <small th:text="${#lists.isEmpty(stats.hourlyTrend) ? '' : stats.hourlyTrend[0].hour}">00:00</small>
-                <small th:text="${#lists.isEmpty(stats.hourlyTrend) ? '' : stats.hourlyTrend[stats.hourlyTrend.size()-1].hour}">23:00</small>
+        </div>
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header bg-dark text-white fw-bold d-flex justify-content-between align-items-center">
+                    最近错误日志
+                    <small class="text-white-50" id="errorLogCount">0 条</small>
+                </div>
+                <div class="card-body bg-dark text-white p-0">
+                    <div class="error-scroller" id="errorLogList">
+                        <p class="text-center text-white-50 my-4">加载中...</p>
+                    </div>
+                </div>
             </div>
-            <p class="text-muted" th:if="${#lists.isEmpty(stats.hourlyTrend)}">暂无数小时趋势数据</p>
         </div>
     </div>
 </div>
 
+<script>
+    let pieChart, lineChart;
+    let refreshTimer = null;
+
+    function initCharts() {
+        pieChart = echarts.init(document.getElementById('pieChart'));
+        lineChart = echarts.init(document.getElementById('lineChart'));
+        window.addEventListener('resize', () => { pieChart && pieChart.resize(); lineChart && lineChart.resize(); });
+    }
+
+    function refreshDashboard() {
+        Promise.all([
+            fetch('/api/v1/logs/stats').then(r => r.json()),
+            fetch('/api/v1/logs/errors/recent?count=30').then(r => r.json())
+        ]).then(([statsResp, errorsResp]) => {
+            if (statsResp.success) updateStats(statsResp.data);
+            if (errorsResp.success) updateErrorLogs(errorsResp.data);
+            document.getElementById('lastRefresh').textContent =
+                '更新于 ' + new Date().toLocaleTimeString();
+        }).catch(e => {
+            console.error('刷新失败:', e);
+            document.getElementById('lastRefresh').textContent = '刷新失败,请重试';
+        });
+    }
+
+    function updateStats(data) {
+        document.getElementById('valTotalCount').textContent = data.totalCount.toLocaleString();
+        document.getElementById('valTodayCount').textContent = data.todayCount.toLocaleString();
+
+        const errCount = data.levelDistribution['ERROR'] || 0;
+        const warnCount = data.levelDistribution['WARN'] || 0;
+        document.getElementById('valErrorCount').textContent = errCount.toLocaleString();
+        document.getElementById('valWarnCount').textContent = warnCount.toLocaleString();
+
+        const errorRate = data.todayErrorRate || 0;
+        document.getElementById('valErrorRate').textContent = errorRate.toFixed(1) + '%';
+
+        checkThreshold(errorRate);
+        renderPieChart(data.levelDistribution);
+
+        const labels = data.hourlyTrend.map(h => h.hour);
+        const values = data.hourlyTrend.map(h => h.count);
+        renderLineChart(labels, values);
+
+        const sourceBody = document.getElementById('sourceBody');
+        if (data.topSources && data.topSources.length > 0) {
+            sourceBody.innerHTML = data.topSources.map((s, i) =>
+                '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(s.source) +
+                '</td><td><span class="badge bg-secondary">' + s.count + '</span></td></tr>'
+            ).join('');
+        } else {
+            sourceBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">暂无数据</td></tr>';
+        }
+    }
+
+    function checkThreshold(errorRate) {
+        const threshold = parseInt(document.getElementById('threshold').value) || 10;
+        const cardError = document.getElementById('cardError');
+        if (errorRate > threshold) {
+            cardError.classList.add('alert-threshold');
+            document.getElementById('alertBar').classList.remove('d-none');
+            document.getElementById('alertText').textContent =
+                '今日错误率 ' + errorRate.toFixed(1) + '% 超过告警阈值 ' + threshold + '%！';
+        } else {
+            cardError.classList.remove('alert-threshold');
+            document.getElementById('alertBar').classList.add('d-none');
+        }
+    }
+
+    function updateErrorLogs(errors) {
+        document.getElementById('errorLogCount').textContent = (errors ? errors.length : 0) + ' 条';
+        const listEl = document.getElementById('errorLogList');
+
+        if (!errors || errors.length === 0) {
+            listEl.innerHTML = '<p class="text-center text-white-50 my-4">暂无错误日志 &#10003;</p>';
+            return;
+        }
+
+        listEl.innerHTML = errors.map(e =>
+            '<div class="error-row py-2 px-3">' +
+            '<small class="text-white-50">' + (e.timestamp || '') + '</small> ' +
+            '<span class="badge bg-danger me-1">ERROR</span> ' +
+            '<span class="text-info">' + escapeHtml(e.source || '') + '</span>' +
+            '<br><span class="text-light">' + escapeHtml(e.message || '') + '</span>' +
+            '</div>'
+        ).join('');
+    }
+
+    function renderPieChart(dist) {
+        if (!pieChart) return;
+        const colors = { ERROR: '#dc3545', WARN: '#ffc107', INFO: '#0dcaf0', DEBUG: '#6c757d' };
+        const data = ['ERROR', 'WARN', 'INFO', 'DEBUG']
+            .filter(k => dist[k] > 0)
+            .map(k => ({ name: k, value: dist[k], itemStyle: { color: colors[k] } }));
+
+        pieChart.setOption({
+            tooltip: { trigger: 'item', formatter: '{b}: {c} 条 ({d}%)' },
+            series: [{
+                type: 'pie', radius: ['45%', '72%'], center: ['50%', '50%'],
+                label: { show: true, formatter: '{b}\n{d}%' },
+                emphasis: { label: { fontSize: 18, fontWeight: 'bold' } },
+                data: data.length > 0 ? data : [{ name: '无数据', value: 1, itemStyle: { color: '#e9ecef' } }]
+            }]
+        }, true);
+    }
+
+    function renderLineChart(labels, values) {
+        if (!lineChart) return;
+        lineChart.setOption({
+            tooltip: { trigger: 'axis', formatter: '{b}<br/>日志量: {c} 条' },
+            grid: { left: 45, right: 20, top: 20, bottom: 30 },
+            xAxis: {
+                type: 'category', data: labels,
+                axisLabel: { rotate: labels.length > 12 ? 45 : 0, fontSize: 11 }
+            },
+            yAxis: {
+                type: 'value', minInterval: 1,
+                splitLine: { lineStyle: { type: 'dashed', color: '#e9ecef' } }
+            },
+            series: [{
+                type: 'line', data: values, smooth: true, symbol: 'circle', symbolSize: 4,
+                lineStyle: { color: '#0d6efd', width: 2 },
+                itemStyle: { color: '#0d6efd' },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(13,110,253,0.3)' },
+                        { offset: 1, color: 'rgba(13,110,253,0.02)' }
+                    ])
+                },
+                markLine: {
+                    silent: true,
+                    data: [{ type: 'average', name: '平均值', label: { fontSize: 10 } }],
+                    lineStyle: { color: '#dc3545', type: 'dashed' }
+                }
+            }]
+        }, true);
+    }
+
+    function setupAutoRefresh() {
+        const select = document.getElementById('refreshInterval');
+        select.addEventListener('change', () => {
+            if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+            const sec = parseInt(select.value);
+            if (sec > 0) {
+                refreshTimer = setInterval(refreshDashboard, sec * 1000);
+            }
+        });
+        const defaultSec = parseInt(select.value);
+        if (defaultSec > 0) {
+            refreshTimer = setInterval(refreshDashboard, defaultSec * 1000);
+        }
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initCharts();
+        refreshDashboard();
+        setupAutoRefresh();
+    });
+</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-

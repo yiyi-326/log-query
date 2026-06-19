@@ -121,6 +121,12 @@ public class LogApiController {
         }
     }
 
+    @GetMapping("/errors/recent")
+    public ApiResponse<List<LogEntry>> recentErrors(
+            @RequestParam(defaultValue = "20") int count) {
+        return ApiResponse.success(logService.getRecentErrors(Math.min(count, 200)));
+    }
+
     @GetMapping("/stats")
     public ApiResponse<LogStatsResponse> stats() {
         return ApiResponse.success(logService.getStats());

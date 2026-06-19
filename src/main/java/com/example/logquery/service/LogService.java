@@ -162,7 +162,25 @@ public class LogService {
                 .map(e -> new LogStatsResponse.HourlyCount(e.getKey(), e.getValue()))
                 .collect(Collectors.toList()));
 
+        // 错误率计算
+        long totalErrors = levelDist.getOrDefault("ERROR", 0L);
+        stats.setErrorRate(stats.getTotalCount() > 0 ? (totalErrors * 100.0 / stats.getTotalCount()) : 0);
+
+        // 今日错误率
+        long todayErrors = 0;
+        for (Object[] row : repository.countByLevelSince(todayStart)) {
+            if ("ERROR".equals(row[0])) {
+                todayErrors = (Long) row[1];
+                break;
+            }
+        }
+        stats.setTodayErrorRate(stats.getTodayCount() > 0 ? (todayErrors * 100.0 / stats.getTodayCount()) : 0);
+
         return stats;
+    }
+
+    public List<LogEntry> getRecentErrors(int count) {
+        return repository.findByLevelOrderByTimestampDesc("ERROR", PageRequest.of(0, count));
     }
 
     public String exportCsv(List<LogEntry> logs) {

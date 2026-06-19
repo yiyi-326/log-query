@@ -32,4 +32,6 @@ public interface LogEntryRepository extends JpaRepository<LogEntry, Long>, JpaSp
     long countByTimestampBetween(LocalDateTime start, LocalDateTime end);
 
     void deleteByTimestampBefore(LocalDateTime before);
+
+    List<LogEntry> findByLevelOrderByTimestampDesc(String level, org.springframework.data.domain.Pageable pageable);
 }

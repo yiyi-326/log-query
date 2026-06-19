@@ -9,12 +9,20 @@ public class LogStatsResponse {
     private Map<String, Long> levelDistribution;
     private List<SourceCount> topSources;
     private List<HourlyCount> hourlyTrend;
+    private double errorRate;
+    private double todayErrorRate;
 
     public long getTotalCount() { return totalCount; }
     public void setTotalCount(long totalCount) { this.totalCount = totalCount; }
 
     public long getTodayCount() { return todayCount; }
     public void setTodayCount(long todayCount) { this.todayCount = todayCount; }
+
+    public double getErrorRate() { return errorRate; }
+    public void setErrorRate(double errorRate) { this.errorRate = errorRate; }
+
+    public double getTodayErrorRate() { return todayErrorRate; }
+    public void setTodayErrorRate(double todayErrorRate) { this.todayErrorRate = todayErrorRate; }
 
     public Map<String, Long> getLevelDistribution() { return levelDistribution; }
     public void setLevelDistribution(Map<String, Long> levelDistribution) { this.levelDistribution = levelDistribution; }
