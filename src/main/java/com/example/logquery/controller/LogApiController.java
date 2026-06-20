@@ -6,6 +6,7 @@ import com.example.logquery.dto.LogStatsResponse;
 import com.example.logquery.entity.LogEntry;
 import com.example.logquery.service.LogImportService;
 import com.example.logquery.service.LogService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
@@ -31,16 +32,21 @@ public class LogApiController {
     }
 
     @PostMapping
-    public ApiResponse<List<LogEntry>> ingest(@RequestBody List<LogEntry> entries) {
+    public ApiResponse<List<LogEntry>> ingest(@RequestBody List<LogEntry> entries,
+                                              HttpServletRequest request) {
         if (entries.isEmpty()) {
             return ApiResponse.error("日志列表不能为空");
         }
-        List<LogEntry> saved = logService.saveBatch(entries);
+        Long appId = (Long) request.getAttribute("appId");
+        List<LogEntry> saved = logService.saveBatch(entries, appId);
         return ApiResponse.success("成功接收 " + saved.size() + " 条日志", saved);
     }
 
     @PostMapping("/single")
-    public ApiResponse<LogEntry> ingestSingle(@RequestBody LogEntry entry) {
+    public ApiResponse<LogEntry> ingestSingle(@RequestBody LogEntry entry,
+                                              HttpServletRequest request) {
+        Long appId = (Long) request.getAttribute("appId");
+        entry.setAppId(appId);
         LogEntry saved = logService.save(entry);
         return ApiResponse.success(saved);
     }
@@ -53,6 +59,7 @@ public class LogApiController {
             @RequestParam(required = false) String regex,
             @RequestParam(required = false) String level,
             @RequestParam(required = false) String source,
+            @RequestParam(required = false) Long appId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
             @RequestParam(defaultValue = "0") int page,
@@ -65,6 +72,7 @@ public class LogApiController {
         req.setRegex(regex);
         req.setLevel(level);
         req.setSource(source);
+        req.setAppId(appId);
         req.setStartTime(startTime);
         req.setEndTime(endTime);
         req.setPage(page);
@@ -89,6 +97,7 @@ public class LogApiController {
             @RequestParam(required = false) String regex,
             @RequestParam(required = false) String level,
             @RequestParam(required = false) String source,
+            @RequestParam(required = false) Long appId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
             @RequestParam(defaultValue = "csv") String format) {
@@ -100,6 +109,7 @@ public class LogApiController {
         req.setRegex(regex);
         req.setLevel(level);
         req.setSource(source);
+        req.setAppId(appId);
         req.setStartTime(startTime);
         req.setEndTime(endTime);
         req.setPage(0);
@@ -123,23 +133,28 @@ public class LogApiController {
 
     @GetMapping("/errors/recent")
     public ApiResponse<List<LogEntry>> recentErrors(
-            @RequestParam(defaultValue = "20") int count) {
-        return ApiResponse.success(logService.getRecentErrors(Math.min(count, 200)));
+            @RequestParam(defaultValue = "20") int count,
+            @RequestParam(required = false) Long appId) {
+        return ApiResponse.success(logService.getRecentErrors(Math.min(count, 200), appId));
     }
 
     @GetMapping("/stats")
-    public ApiResponse<LogStatsResponse> stats() {
-        return ApiResponse.success(logService.getStats());
+    public ApiResponse<LogStatsResponse> stats(
+            @RequestParam(required = false) Long appId) {
+        return ApiResponse.success(logService.getStats(appId));
     }
 
     @PostMapping("/import")
-    public ApiResponse<Map<String, Object>> importFile(@RequestParam("file") MultipartFile file) {
+    public ApiResponse<Map<String, Object>> importFile(@RequestParam("file") MultipartFile file,
+                                                       @RequestParam(required = false) Long appId,
+                                                       HttpServletRequest request) {
         try {
             List<LogEntry> entries = importService.parse(file);
             if (entries.isEmpty()) {
                 return ApiResponse.error("未能从文件中解析出有效日志");
             }
-            List<LogEntry> saved = logService.saveBatch(entries);
+            Long effectiveAppId = appId != null ? appId : (Long) request.getAttribute("appId");
+            List<LogEntry> saved = logService.saveBatch(entries, effectiveAppId);
             Map<String, Object> data = Map.of(
                     "parsed", entries.size(),
                     "imported", saved.size()

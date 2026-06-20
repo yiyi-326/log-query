@@ -14,6 +14,7 @@
             <a class="nav-link" href="/">仪表盘</a>
             <a class="nav-link active" href="/query">日志查询</a>
             <a class="nav-link" href="/import">文件导入</a>
+            <a class="nav-link" href="/apps">应用管理</a>
         </div>
     </div>
 </nav>
@@ -56,6 +57,12 @@
                     <input type="text" id="source" class="form-control" placeholder="服务名...">
                 </div>
                 <!-- 级别 + 每页条数 -->
+                <div class="col-md-2">
+                    <label class="form-label">应用</label>
+                    <select id="appSelect" class="form-select" onchange="search(0)">
+                        <option value="">全部应用</option>
+                    </select>
+                </div>
                 <div class="col-md-2">
                     <label class="form-label">级别</label>
                     <select id="level" class="form-select">
@@ -147,6 +154,7 @@
         document.querySelectorAll('#keywords, #regex, #source, #startTime, #endTime').forEach(e => e.value = '');
         document.getElementById('keywordLogic').value = 'OR';
         document.getElementById('level').value = '';
+        document.getElementById('appSelect').value = '';
         document.getElementById('size').value = '20';
     }
 
@@ -164,6 +172,7 @@
         add('regex', document.getElementById('regex').value);
         add('level', document.getElementById('level').value);
         add('source', document.getElementById('source').value);
+        add('appId', document.getElementById('appSelect').value);
         if (document.getElementById('startTime').value) {
             params.append('startTime', document.getElementById('startTime').value + ':00');
         }
@@ -258,6 +267,23 @@
         div.textContent = str;
         return div.innerHTML;
     }
+
+    function loadApps() {
+        fetch('/api/v1/apps')
+            .then(r => r.json())
+            .then(resp => {
+                if (!resp.success) return;
+                const sel = document.getElementById('appSelect');
+                resp.data.forEach(a => {
+                    const opt = document.createElement('option');
+                    opt.value = a.id;
+                    opt.textContent = a.name + (a.enabled ? '' : ' (已禁用)');
+                    sel.appendChild(opt);
+                });
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', loadApps);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>

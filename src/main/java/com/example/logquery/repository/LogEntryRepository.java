@@ -1,6 +1,7 @@
 package com.example.logquery.repository;
 
 import com.example.logquery.entity.LogEntry;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -15,23 +16,30 @@ public interface LogEntryRepository extends JpaRepository<LogEntry, Long>, JpaSp
 
     long countByTimestampAfter(LocalDateTime after);
 
+    long countByTimestampAfterAndAppId(LocalDateTime after, Long appId);
+
     List<LogEntry> findByTimestampAfter(LocalDateTime after);
 
-    @Query("SELECT e.level, COUNT(e) FROM LogEntry e WHERE e.timestamp >= :since GROUP BY e.level")
-    List<Object[]> countByLevelSince(@Param("since") LocalDateTime since);
+    List<LogEntry> findByTimestampAfterAndAppId(LocalDateTime after, Long appId);
 
-    @Query("SELECT e.level, COUNT(e) FROM LogEntry e GROUP BY e.level")
-    List<Object[]> countByLevel();
+    @Query("SELECT e.level, COUNT(e) FROM LogEntry e WHERE (:appId IS NULL OR e.appId = :appId) GROUP BY e.level")
+    List<Object[]> countByLevel(@Param("appId") Long appId);
 
-    @Query("SELECT e.source, COUNT(e) FROM LogEntry e GROUP BY e.source ORDER BY COUNT(e) DESC")
-    List<Object[]> countBySource();
+    @Query("SELECT e.level, COUNT(e) FROM LogEntry e WHERE e.timestamp >= :since AND (:appId IS NULL OR e.appId = :appId) GROUP BY e.level")
+    List<Object[]> countByLevelSince(@Param("since") LocalDateTime since, @Param("appId") Long appId);
 
-    @Query("SELECT e.source, COUNT(e) FROM LogEntry e WHERE e.timestamp >= :since GROUP BY e.source ORDER BY COUNT(e) DESC")
-    List<Object[]> countBySourceSince(@Param("since") LocalDateTime since);
+    @Query("SELECT e.source, COUNT(e) FROM LogEntry e WHERE (:appId IS NULL OR e.appId = :appId) GROUP BY e.source ORDER BY COUNT(e) DESC")
+    List<Object[]> countBySource(@Param("appId") Long appId);
+
+    @Query("SELECT e.source, COUNT(e) FROM LogEntry e WHERE e.timestamp >= :since AND (:appId IS NULL OR e.appId = :appId) GROUP BY e.source ORDER BY COUNT(e) DESC")
+    List<Object[]> countBySourceSince(@Param("since") LocalDateTime since, @Param("appId") Long appId);
 
     long countByTimestampBetween(LocalDateTime start, LocalDateTime end);
 
     void deleteByTimestampBefore(LocalDateTime before);
 
-    List<LogEntry> findByLevelOrderByTimestampDesc(String level, org.springframework.data.domain.Pageable pageable);
+    List<LogEntry> findByLevelOrderByTimestampDesc(String level, Pageable pageable);
+
+    @Query("SELECT e FROM LogEntry e WHERE e.level = :level AND (:appId IS NULL OR e.appId = :appId) ORDER BY e.timestamp DESC")
+    List<LogEntry> findRecentErrors(@Param("level") String level, @Param("appId") Long appId, Pageable pageable);
 }

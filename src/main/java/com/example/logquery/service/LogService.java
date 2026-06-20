@@ -39,7 +39,16 @@ public class LogService {
     }
 
     @Transactional
-    public List<LogEntry> saveBatch(List<LogEntry> entries) {
+    public List<LogEntry> saveBatch(List<LogEntry> entries, Long appId) {
+        for (LogEntry entry : entries) {
+            if (entry.getTimestamp() == null) {
+                entry.setTimestamp(LocalDateTime.now());
+            }
+            if (entry.getLevel() == null) {
+                entry.setLevel("INFO");
+            }
+            entry.setAppId(appId);
+        }
         return repository.saveAll(entries);
     }
 
@@ -61,6 +70,11 @@ public class LogService {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
+            // 应用隔离
+            if (req.getAppId() != null) {
+                predicates.add(cb.equal(root.get("appId"), req.getAppId()));
+            }
+
             if (req.getLevel() != null && !req.getLevel().isBlank()) {
                 predicates.add(cb.equal(root.get("level"), req.getLevel().trim().toUpperCase()));
             }
@@ -74,7 +88,6 @@ public class LogService {
                 predicates.add(cb.lessThanOrEqualTo(root.get("timestamp"), req.getEndTime()));
             }
 
-            // 正则表达式搜索
             if (req.getRegex() != null && !req.getRegex().isBlank()) {
                 String pattern = req.getRegex().trim();
                 predicates.add(cb.or(
@@ -85,7 +98,6 @@ public class LogService {
                 ));
             }
 
-            // 多关键词组合搜索
             List<String> kwList = buildKeywordList(req);
             if (!kwList.isEmpty()) {
                 String logic = "AND".equalsIgnoreCase(req.getKeywordLogic()) ? "AND" : "OR";
@@ -127,33 +139,53 @@ public class LogService {
     }
 
     public LogStatsResponse getStats() {
+        return getStats(null);
+    }
+
+    public LogStatsResponse getStats(Long appId) {
         LocalDateTime todayStart = LocalDateTime.of(LocalDate.now(), LocalTime.MIN);
         LogStatsResponse stats = new LogStatsResponse();
 
-        stats.setTotalCount(repository.count());
-        stats.setTodayCount(repository.countByTimestampAfter(todayStart));
+        // 总量统计
+        if (appId != null) {
+            Specification<LogEntry> appSpec = (root, q, cb) -> cb.equal(root.get("appId"), appId);
+            Specification<LogEntry> todaySpec = (root, q, cb) -> cb.and(
+                    cb.equal(root.get("appId"), appId),
+                    cb.greaterThanOrEqualTo(root.get("timestamp"), todayStart)
+            );
+            stats.setTotalCount(repository.count(appSpec));
+            stats.setTodayCount(repository.count(todaySpec));
+        } else {
+            stats.setTotalCount(repository.count());
+            stats.setTodayCount(repository.countByTimestampAfter(todayStart));
+        }
 
+        // 级别分布
         Map<String, Long> levelDist = new LinkedHashMap<>();
         levelDist.put("DEBUG", 0L);
         levelDist.put("INFO", 0L);
         levelDist.put("WARN", 0L);
         levelDist.put("ERROR", 0L);
-        for (Object[] row : repository.countByLevel()) {
+        for (Object[] row : repository.countByLevel(appId)) {
             levelDist.put((String) row[0], (Long) row[1]);
         }
         stats.setLevelDistribution(levelDist);
 
-        List<Object[]> sourceRows = repository.countBySource();
+        // 来源 TOP 10
+        List<Object[]> sourceRows = repository.countBySource(appId);
         stats.setTopSources(sourceRows.stream()
                 .limit(10)
                 .map(row -> new LogStatsResponse.SourceCount((String) row[0], (Long) row[1]))
                 .collect(Collectors.toList()));
 
+        // 今日每小时趋势
         Map<String, Long> hourlyMap = new LinkedHashMap<>();
         for (int h = 0; h < 24; h++) {
             hourlyMap.put(String.format("%02d:00", h), 0L);
         }
-        List<LogEntry> todayLogs = repository.findByTimestampAfter(todayStart);
+        List<LogEntry> todayLogs = appId != null
+                ? repository.findByTimestampAfterAndAppId(todayStart, appId)
+                : repository.findByTimestampAfter(todayStart);
         for (LogEntry e : todayLogs) {
             String hourKey = String.format("%02d:00", e.getTimestamp().getHour());
             hourlyMap.merge(hourKey, 1L, Long::sum);
@@ -162,13 +194,13 @@ public class LogService {
                 .map(e -> new LogStatsResponse.HourlyCount(e.getKey(), e.getValue()))
                 .collect(Collectors.toList()));
 
-        // 错误率计算
+        // 错误率
         long totalErrors = levelDist.getOrDefault("ERROR", 0L);
         stats.setErrorRate(stats.getTotalCount() > 0 ? (totalErrors * 100.0 / stats.getTotalCount()) : 0);
 
-        // 今日错误率
         long todayErrors = 0;
-        for (Object[] row : repository.countByLevelSince(todayStart)) {
+        List<Object[]> todayLevels = repository.countByLevelSince(todayStart, appId);
+        for (Object[] row : todayLevels) {
             if ("ERROR".equals(row[0])) {
                 todayErrors = (Long) row[1];
                 break;
@@ -180,7 +212,15 @@ public class LogService {
     }
 
     public List<LogEntry> getRecentErrors(int count) {
-        return repository.findByLevelOrderByTimestampDesc("ERROR", PageRequest.of(0, count));
+        return getRecentErrors(count, null);
+    }
+
+    public List<LogEntry> getRecentErrors(int count, Long appId) {
+        PageRequest pageable = PageRequest.of(0, count);
+        if (appId != null) {
+            return repository.findRecentErrors("ERROR", appId, pageable);
+        }
+        return repository.findByLevelOrderByTimestampDesc("ERROR", pageable);
     }
 
     public String exportCsv(List<LogEntry> logs) {

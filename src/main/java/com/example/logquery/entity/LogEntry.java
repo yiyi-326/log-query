@@ -27,6 +27,9 @@ public class LogEntry {
     @Column(nullable = false, columnDefinition = "CLOB")
     private String message;
 
+    @Column(name = "app_id")
+    private Long appId;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -60,6 +63,9 @@ public class LogEntry {
 
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
+
+    public Long getAppId() { return appId; }
+    public void setAppId(Long appId) { this.appId = appId; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

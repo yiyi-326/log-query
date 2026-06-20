@@ -12,8 +12,12 @@ public class LogQueryRequest {
     private String source;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
+    private Long appId;
     private int page = 0;
     private int size = 20;
+
+    public Long getAppId() { return appId; }
+    public void setAppId(Long appId) { this.appId = appId; }
 
     public String getKeyword() { return keyword; }
     public void setKeyword(String keyword) { this.keyword = keyword; }

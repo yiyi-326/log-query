@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>应用管理</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">日志聚合查询系统</a>
+        <div class="navbar-nav">
+            <a class="nav-link" href="/">仪表盘</a>
+            <a class="nav-link" href="/query">日志查询</a>
+            <a class="nav-link" href="/import">文件导入</a>
+            <a class="nav-link active" href="/apps">应用管理</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>应用管理</h2>
+        <button class="btn btn-primary" onclick="showCreateModal()">注册新应用</button>
+    </div>
+
+    <div id="loading" class="text-center d-none">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p>加载中...</p>
+    </div>
+
+    <div id="errorMsg" class="alert alert-danger d-none"></div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead><tr>
+                <th>ID</th>
+                <th>应用名称</th>
+                <th>描述</th>
+                <th>API Key</th>
+                <th>状态</th>
+                <th>创建时间</th>
+                <th style="width:220px">操作</th>
+            </tr></thead>
+            <tbody id="appBody"><tr><td colspan="7" class="text-center text-muted">加载中...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 创建/编辑 Modal -->
+<div class="modal fade" id="appModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">注册新应用</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editId">
+                <div class="mb-3">
+                    <label class="form-label">应用名称 <span class="text-danger">*</span></label>
+                    <input type="text" id="appName" class="form-control" placeholder="如: order-service" maxlength="100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">描述</label>
+                    <textarea id="appDesc" class="form-control" rows="3" placeholder="应用描述信息..." maxlength="500"></textarea>
+                </div>
+                <div id="apiKeyDisplay" class="mb-3 d-none">
+                    <label class="form-label">API Key（用于上报日志）</label>
+                    <div class="input-group">
+                        <input type="text" id="apiKeyField" class="form-control" readonly style="font-family: monospace; font-size: 0.85rem;">
+                        <button class="btn btn-outline-primary" onclick="copyApiKey()">复制</button>
+                    </div>
+                    <small class="text-success" id="copyFeedback"></small>
+                    <br><small class="text-danger">请立即复制保存，关闭弹窗后无法再次查看完整 Key</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveApp()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let appModal;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        appModal = new bootstrap.Modal(document.getElementById('appModal'));
+        loadApps();
+    });
+
+    function loadApps() {
+        document.getElementById('loading').classList.remove('d-none');
+        fetch('/api/v1/apps')
+            .then(r => r.json())
+            .then(resp => {
+                document.getElementById('loading').classList.add('d-none');
+                if (!resp.success) { showError(resp.message); return; }
+                renderTable(resp.data);
+            })
+            .catch(e => showError('加载失败: ' + e.message));
+    }
+
+    function renderTable(apps) {
+        const tbody = document.getElementById('appBody');
+        if (!apps || apps.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无应用，点击"注册新应用"开始</td></tr>';
+            return;
+        }
+        tbody.innerHTML = apps.map(a =>
+            '<tr>' +
+            '<td>' + a.id + '</td>' +
+            '<td><strong>' + escapeHtml(a.name) + '</strong></td>' +
+            '<td>' + escapeHtml(a.description || '-') + '</td>' +
+            '<td><code style="font-size:0.8rem">' + (a.apiKey ? a.apiKey.substring(0, 16) + '…' : '-') + '</code></td>' +
+            '<td><span class="badge ' + (a.enabled ? 'bg-success' : 'bg-secondary') + '">' + (a.enabled ? '启用' : '禁用') + '</span></td>' +
+            '<td><small>' + (a.createdAt ? a.createdAt.substring(0, 16).replace('T',' ') : '-') + '</small></td>' +
+            '<td>' +
+            '<button class="btn btn-sm btn-outline-warning me-1" onclick="regenerateKey(' + a.id + ')" title="重新生成 API Key">重置Key</button>' +
+            '<button class="btn btn-sm btn-outline-info me-1" onclick="editApp(' + a.id + ')">编辑</button>' +
+            '<button class="btn btn-sm btn-outline-danger" onclick="deleteApp(' + a.id + ', \'' + escapeHtml(a.name).replace(/'/g, "\\'") + '\')">删除</button>' +
+            '</td></tr>'
+        ).join('');
+    }
+
+    function showCreateModal() {
+        document.getElementById('editId').value = '';
+        document.getElementById('appName').value = '';
+        document.getElementById('appDesc').value = '';
+        document.getElementById('apiKeyDisplay').classList.add('d-none');
+        document.getElementById('modalTitle').textContent = '注册新应用';
+        appModal.show();
+    }
+
+    function editApp(id) {
+        fetch('/api/v1/apps/' + id)
+            .then(r => r.json())
+            .then(resp => {
+                if (!resp.success) { showError(resp.message); return; }
+                document.getElementById('editId').value = resp.data.id;
+                document.getElementById('appName').value = resp.data.name;
+                document.getElementById('appDesc').value = resp.data.description || '';
+                document.getElementById('apiKeyDisplay').classList.add('d-none');
+                document.getElementById('modalTitle').textContent = '编辑应用';
+                appModal.show();
+            });
+    }
+
+    function saveApp() {
+        const id = document.getElementById('editId').value;
+        const name = document.getElementById('appName').value.trim();
+        const desc = document.getElementById('appDesc').value.trim();
+
+        if (!name) { alert('请输入应用名称'); return; }
+
+        const body = { name: name, description: desc, enabled: true };
+        const url = id ? '/api/v1/apps/' + id : '/api/v1/apps';
+        const method = id ? 'PUT' : 'POST';
+
+        fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(r => r.json())
+        .then(resp => {
+            if (!resp.success) { showError(resp.message); return; }
+            if (id) {
+                // 编辑模式：直接关闭
+                appModal.hide();
+            } else {
+                // 新建模式：在当前弹窗切换显示 API Key
+                document.getElementById('editId').value = resp.data.id;
+                document.getElementById('apiKeyField').value = resp.data.apiKey;
+                document.getElementById('apiKeyDisplay').classList.remove('d-none');
+                document.getElementById('appName').value = resp.data.name;
+                document.getElementById('appDesc').value = resp.data.description || '';
+                document.getElementById('modalTitle').textContent = '应用已创建 — 请复制 API Key';
+                document.getElementById('copyFeedback').textContent = '';
+            }
+            loadApps();
+        })
+        .catch(e => showError('保存失败: ' + e.message));
+    }
+
+    function regenerateKey(id) {
+        if (!confirm('确定重新生成 API Key？旧的 Key 将立即失效。')) return;
+        fetch('/api/v1/apps/' + id + '/regenerate-key', { method: 'PUT' })
+            .then(r => r.json())
+            .then(resp => {
+                if (!resp.success) { showError(resp.message); return; }
+                document.getElementById('editId').value = resp.data.id;
+                document.getElementById('appName').value = resp.data.name;
+                document.getElementById('appDesc').value = resp.data.description || '';
+                document.getElementById('apiKeyField').value = resp.data.apiKey;
+                document.getElementById('apiKeyDisplay').classList.remove('d-none');
+                document.getElementById('modalTitle').textContent = 'API Key 已重新生成';
+                document.getElementById('copyFeedback').textContent = '';
+                appModal.show();
+                loadApps();
+            })
+            .catch(e => showError('操作失败: ' + e.message));
+    }
+
+    function deleteApp(id, name) {
+        if (!confirm('确定删除应用 "' + name + '"？该操作不可撤销。')) return;
+        fetch('/api/v1/apps/' + id, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(resp => {
+                if (!resp.success) { showError(resp.message); return; }
+                loadApps();
+            })
+            .catch(e => showError('删除失败: ' + e.message));
+    }
+
+    function copyApiKey() {
+        const field = document.getElementById('apiKeyField');
+        navigator.clipboard.writeText(field.value).then(() => {
+            document.getElementById('copyFeedback').textContent = '已复制到剪贴板';
+            setTimeout(() => { document.getElementById('copyFeedback').textContent = ''; }, 2500);
+        }).catch(() => {
+            field.select();
+            document.execCommand('copy');
+            document.getElementById('copyFeedback').textContent = '已复制到剪贴板';
+            setTimeout(() => { document.getElementById('copyFeedback').textContent = ''; }, 2500);
+        });
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorMsg');
+        el.textContent = msg;
+        el.classList.remove('d-none');
+        setTimeout(() => el.classList.add('d-none'), 4000);
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

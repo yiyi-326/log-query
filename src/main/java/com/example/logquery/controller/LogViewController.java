@@ -20,5 +20,10 @@ public class LogViewController {
     public String importPage() {
         return "import";
     }
+
+    @GetMapping("/apps")
+    public String appsPage() {
+        return "apps";
+    }
 }
 

@@ -40,6 +40,7 @@
             <a class="nav-link active" href="/">仪表盘</a>
             <a class="nav-link" href="/query">日志查询</a>
             <a class="nav-link" href="/import">文件导入</a>
+            <a class="nav-link" href="/apps">应用管理</a>
         </div>
     </div>
 </nav>
@@ -95,6 +96,12 @@
             <div class="card h-100">
                 <div class="card-header fw-bold">控制面板</div>
                 <div class="card-body">
+                    <div class="mb-2">
+                        <label class="form-label small">选择应用</label>
+                        <select id="appSelect" class="form-select form-select-sm" onchange="refreshDashboard()">
+                            <option value="">全部应用</option>
+                        </select>
+                    </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small">错误率告警阈值</label>
@@ -177,10 +184,17 @@
         window.addEventListener('resize', () => { pieChart && pieChart.resize(); lineChart && lineChart.resize(); });
     }
 
+    function getSelectedAppId() {
+        const v = document.getElementById('appSelect').value;
+        return v ? v : null;
+    }
+
     function refreshDashboard() {
+        const appId = getSelectedAppId();
+        const appParam = appId ? '?appId=' + appId : '';
         Promise.all([
-            fetch('/api/v1/logs/stats').then(r => r.json()),
-            fetch('/api/v1/logs/errors/recent?count=30').then(r => r.json())
+            fetch('/api/v1/logs/stats' + appParam).then(r => r.json()),
+            fetch('/api/v1/logs/errors/recent?count=30' + (appId ? '&appId=' + appId : '')).then(r => r.json())
         ]).then(([statsResp, errorsResp]) => {
             if (statsResp.success) updateStats(statsResp.data);
             if (errorsResp.success) updateErrorLogs(errorsResp.data);
@@ -326,8 +340,24 @@
         return div.innerHTML;
     }
 
+    function loadApps() {
+        fetch('/api/v1/apps')
+            .then(r => r.json())
+            .then(resp => {
+                if (!resp.success) return;
+                const sel = document.getElementById('appSelect');
+                resp.data.forEach(a => {
+                    const opt = document.createElement('option');
+                    opt.value = a.id;
+                    opt.textContent = a.name + (a.enabled ? '' : ' (已禁用)');
+                    sel.appendChild(opt);
+                });
+            });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         initCharts();
+        loadApps();
         refreshDashboard();
         setupAutoRefresh();
     });
