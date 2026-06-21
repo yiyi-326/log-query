@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>告警规则管理</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">日志聚合查询系统</a>
+        <div class="navbar-nav">
+            <a class="nav-link" href="/">仪表盘</a>
+            <a class="nav-link" href="/query">日志查询</a>
+            <a class="nav-link active" href="/alerts">告警规则</a>
+            <a class="nav-link" href="/alert-history">告警历史</a>
+            <a class="nav-link" href="/apps">应用管理</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>告警规则管理</h2>
+        <div>
+            <button class="btn btn-outline-info me-2" onclick="location.href='/alert-history'">告警历史</button>
+            <button class="btn btn-outline-warning me-2" onclick="manualEvaluate()">手动检查</button>
+            <button class="btn btn-primary" onclick="showCreateModal()">新建规则</button>
+        </div>
+    </div>
+
+    <div id="errorMsg" class="alert alert-danger d-none"></div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead><tr>
+                <th>ID</th><th>规则名称</th><th>监控级别</th><th>阈值</th><th>时间窗口</th>
+                <th>Webhook</th><th>邮件</th><th>状态</th><th>操作</th>
+            </tr></thead>
+            <tbody id="ruleBody"><tr><td colspan="9" class="text-center text-muted">加载中...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 编辑 Modal -->
+<div class="modal fade" id="ruleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">新建告警规则</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editId">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">规则名称 <span class="text-danger">*</span></label>
+                        <input type="text" id="ruleName" class="form-control" placeholder="如: ERROR暴增告警" maxlength="100">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">监控级别</label>
+                        <select id="ruleLevel" class="form-select">
+                            <option value="ERROR" selected>ERROR</option>
+                            <option value="WARN">WARN</option>
+                            <option value="INFO">INFO</option>
+                            <option value="DEBUG">DEBUG</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">阈值(条数)</label>
+                        <input type="number" id="ruleThreshold" class="form-control" value="10" min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">时间窗口(分)</label>
+                        <input type="number" id="ruleWindow" class="form-control" value="5" min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">启用</label>
+                        <select id="ruleEnabled" class="form-select">
+                            <option value="true" selected>启用</option>
+                            <option value="false">禁用</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Webhook URL（钉钉/企微机器人）</label>
+                        <input type="text" id="ruleWebhook" class="form-control" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">邮件通知（多个用逗号分隔）</label>
+                        <input type="text" id="ruleEmail" class="form-control" placeholder="admin@example.com">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveRule()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let ruleModal;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        ruleModal = new bootstrap.Modal(document.getElementById('ruleModal'));
+        loadRules();
+    });
+
+    function loadRules() {
+        fetch('/api/v1/alerts/rules')
+            .then(r => r.json())
+            .then(resp => {
+                if (!resp.success) { showError(resp.message); return; }
+                renderTable(resp.data);
+            });
+    }
+
+    function renderTable(rules) {
+        const tbody = document.getElementById('ruleBody');
+        if (!rules || rules.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无告警规则</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rules.map(r =>
+            '<tr>' +
+            '<td>' + r.id + '</td>' +
+            '<td><strong>' + escapeHtml(r.name) + '</strong></td>' +
+            '<td><span class="badge ' + levelBadge(r.level) + '">' + r.level + '</span></td>' +
+            '<td>' + r.threshold + ' 条</td>' +
+            '<td>' + r.windowMinutes + ' 分钟</td>' +
+            '<td>' + (r.webhookUrl ? '<span class="text-success">已配置</span>' : '<span class="text-muted">未配置</span>') + '</td>' +
+            '<td>' + (r.emailRecipients ? '<span class="text-success">' + r.emailRecipients + '</span>' : '<span class="text-muted">未配置</span>') + '</td>' +
+            '<td><span class="badge ' + (r.enabled ? 'bg-success' : 'bg-secondary') + '">' + (r.enabled ? '启用' : '禁用') + '</span></td>' +
+            '<td>' +
+            '<button class="btn btn-sm btn-outline-info me-1" onclick="editRule(' + r.id + ')">编辑</button>' +
+            '<button class="btn btn-sm btn-outline-danger" onclick="deleteRule(' + r.id + ', \'' + escapeHtml(r.name).replace(/'/g, "\\'") + '\')">删除</button>' +
+            '</td></tr>'
+        ).join('');
+    }
+
+    function levelBadge(level) {
+        return {ERROR:'bg-danger',WARN:'bg-warning text-dark',INFO:'bg-info text-dark',DEBUG:'bg-secondary'}[level] || 'bg-secondary';
+    }
+
+    function showCreateModal() {
+        document.getElementById('editId').value = '';
+        document.getElementById('ruleName').value = '';
+        document.getElementById('ruleLevel').value = 'ERROR';
+        document.getElementById('ruleThreshold').value = '10';
+        document.getElementById('ruleWindow').value = '5';
+        document.getElementById('ruleWebhook').value = '';
+        document.getElementById('ruleEmail').value = '';
+        document.getElementById('ruleEnabled').value = 'true';
+        document.getElementById('modalTitle').textContent = '新建告警规则';
+        ruleModal.show();
+    }
+
+    function editRule(id) {
+        fetch('/api/v1/alerts/rules/' + id)
+            .then(r => r.json())
+            .then(resp => {
+                if (!resp.success) { showError(resp.message); return; }
+                const r = resp.data;
+                document.getElementById('editId').value = r.id;
+                document.getElementById('ruleName').value = r.name;
+                document.getElementById('ruleLevel').value = r.level;
+                document.getElementById('ruleThreshold').value = r.threshold;
+                document.getElementById('ruleWindow').value = r.windowMinutes;
+                document.getElementById('ruleWebhook').value = r.webhookUrl || '';
+                document.getElementById('ruleEmail').value = r.emailRecipients || '';
+                document.getElementById('ruleEnabled').value = r.enabled ? 'true' : 'false';
+                document.getElementById('modalTitle').textContent = '编辑告警规则';
+                ruleModal.show();
+            });
+    }
+
+    function saveRule() {
+        const id = document.getElementById('editId').value;
+        const name = document.getElementById('ruleName').value.trim();
+        if (!name) { alert('请输入规则名称'); return; }
+
+        const body = {
+            name: name,
+            level: document.getElementById('ruleLevel').value,
+            threshold: parseInt(document.getElementById('ruleThreshold').value) || 10,
+            windowMinutes: parseInt(document.getElementById('ruleWindow').value) || 5,
+            webhookUrl: document.getElementById('ruleWebhook').value.trim(),
+            emailRecipients: document.getElementById('ruleEmail').value.trim(),
+            enabled: document.getElementById('ruleEnabled').value === 'true'
+        };
+
+        const url = id ? '/api/v1/alerts/rules/' + id : '/api/v1/alerts/rules';
+        const method = id ? 'PUT' : 'POST';
+
+        fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(r => r.json())
+        .then(resp => {
+            if (!resp.success) { showError(resp.message); return; }
+            ruleModal.hide();
+            loadRules();
+        })
+        .catch(e => showError('保存失败: ' + e.message));
+    }
+
+    function deleteRule(id, name) {
+        if (!confirm('确定删除规则 "' + name + '"？')) return;
+        fetch('/api/v1/alerts/rules/' + id, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(resp => {
+                if (!resp.success) { showError(resp.message); return; }
+                loadRules();
+            });
+    }
+
+    function manualEvaluate() {
+        fetch('/api/v1/alerts/evaluate', { method: 'POST' })
+            .then(r => r.json())
+            .then(resp => {
+                alert(resp.message);
+            });
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorMsg');
+        el.textContent = msg;
+        el.classList.remove('d-none');
+        setTimeout(() => el.classList.add('d-none'), 4000);
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

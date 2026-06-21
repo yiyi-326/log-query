@@ -25,5 +25,15 @@ public class LogViewController {
     public String appsPage() {
         return "apps";
     }
+
+    @GetMapping("/alerts")
+    public String alertsPage() {
+        return "alert-rules";
+    }
+
+    @GetMapping("/alert-history")
+    public String alertHistoryPage() {
+        return "alert-history";
+    }
 }
 

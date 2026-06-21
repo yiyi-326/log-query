@@ -39,6 +39,8 @@
         <div class="navbar-nav">
             <a class="nav-link active" href="/">仪表盘</a>
             <a class="nav-link" href="/query">日志查询</a>
+            <a class="nav-link" href="/alerts">告警规则</a>
+            <a class="nav-link" href="/alert-history">告警历史</a>
             <a class="nav-link" href="/import">文件导入</a>
             <a class="nav-link" href="/apps">应用管理</a>
         </div>
@@ -120,9 +122,17 @@
                             </select>
                         </div>
                     </div>
-                    <div class="d-flex gap-2 align-items-center">
+                    <div class="d-flex gap-2 align-items-center mb-2">
                         <button id="btnRefresh" class="btn btn-sm btn-primary" onclick="refreshDashboard()">立即刷新</button>
                         <span class="small text-muted" id="lastRefresh"></span>
+                    </div>
+                    <div class="border-top pt-2">
+                        <a href="/alert-history" class="text-decoration-none">
+                            <small>24h 告警: </small><span class="badge bg-danger" id="alert24h">--</span>
+                        </a>
+                        <a href="/alerts" class="text-decoration-none ms-2">
+                            <small>告警规则</small>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -194,10 +204,14 @@
         const appParam = appId ? '?appId=' + appId : '';
         Promise.all([
             fetch('/api/v1/logs/stats' + appParam).then(r => r.json()),
-            fetch('/api/v1/logs/errors/recent?count=30' + (appId ? '&appId=' + appId : '')).then(r => r.json())
-        ]).then(([statsResp, errorsResp]) => {
+            fetch('/api/v1/logs/errors/recent?count=30' + (appId ? '&appId=' + appId : '')).then(r => r.json()),
+            fetch('/api/v1/alerts/count').then(r => r.json())
+        ]).then(([statsResp, errorsResp, alertsResp]) => {
             if (statsResp.success) updateStats(statsResp.data);
             if (errorsResp.success) updateErrorLogs(errorsResp.data);
+            if (alertsResp.success) {
+                document.getElementById('alert24h').textContent = alertsResp.data;
+            }
             document.getElementById('lastRefresh').textContent =
                 '更新于 ' + new Date().toLocaleTimeString();
         }).catch(e => {

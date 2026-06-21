@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>告警历史</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">日志聚合查询系统</a>
+        <div class="navbar-nav">
+            <a class="nav-link" href="/">仪表盘</a>
+            <a class="nav-link" href="/query">日志查询</a>
+            <a class="nav-link" href="/alerts">告警规则</a>
+            <a class="nav-link active" href="/alert-history">告警历史</a>
+            <a class="nav-link" href="/apps">应用管理</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <h2 class="mb-3">告警历史</h2>
+
+    <div id="loading" class="text-center d-none">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p>加载中...</p>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead><tr>
+                <th>ID</th><th>规则名称</th><th>级别</th><th>匹配数量</th><th>阈值</th>
+                <th>窗口</th><th>触发时间</th><th>通知状态</th><th>详情</th>
+            </tr></thead>
+            <tbody id="recordBody"><tr><td colspan="9" class="text-center text-muted">加载中...</td></tr></tbody>
+        </table>
+    </div>
+
+    <nav id="pagination" class="d-none">
+        <ul class="pagination justify-content-center" id="pageLinks"></ul>
+    </nav>
+    <small class="text-muted" id="totalInfo"></small>
+</div>
+
+<script>
+    let currentPage = 0;
+
+    document.addEventListener('DOMContentLoaded', () => loadRecords(0));
+
+    function loadRecords(page) {
+        currentPage = page;
+        document.getElementById('loading').classList.remove('d-none');
+
+        fetch('/api/v1/alerts/records?page=' + page + '&size=20')
+            .then(r => r.json())
+            .then(resp => {
+                document.getElementById('loading').classList.add('d-none');
+                if (!resp.success) return;
+                renderTable(resp.data.content);
+                renderPagination(resp.data);
+                document.getElementById('totalInfo').textContent =
+                    '共 ' + resp.data.totalElements + ' 条告警记录';
+            });
+    }
+
+    function renderTable(records) {
+        const tbody = document.getElementById('recordBody');
+        if (!records || records.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无告警记录</td></tr>';
+            return;
+        }
+        tbody.innerHTML = records.map(r =>
+            '<tr>' +
+            '<td>' + r.id + '</td>' +
+            '<td><strong>' + escapeHtml(r.ruleName) + '</strong></td>' +
+            '<td><span class="badge ' + levelBadge(r.level) + '">' + r.level + '</span></td>' +
+            '<td><strong class="text-danger">' + r.matchCount + '</strong></td>' +
+            '<td>' + r.threshold + '</td>' +
+            '<td>' + r.windowMinutes + 'min</td>' +
+            '<td><small>' + (r.triggeredAt || '').substring(0, 16).replace('T', ' ') + '</small></td>' +
+            '<td><span class="badge ' + statusBadge(r.notificationStatus) + '">' + statusLabel(r.notificationStatus) + '</span></td>' +
+            '<td><small class="text-muted">' + escapeHtml(r.notificationDetail || '-') + '</small></td>' +
+            '</tr>'
+        ).join('');
+    }
+
+    function levelBadge(level) {
+        return {ERROR:'bg-danger',WARN:'bg-warning text-dark',INFO:'bg-info text-dark',DEBUG:'bg-secondary'}[level] || 'bg-secondary';
+    }
+
+    function statusBadge(status) {
+        const map = {both_sent:'bg-success',webhook_sent:'bg-info',email_sent:'bg-info',pending:'bg-warning text-dark'};
+        return map[status] || 'bg-danger';
+    }
+
+    function statusLabel(status) {
+        const map = {both_sent:'已通知',webhook_sent:'Webhook',email_sent:'邮件',pending:'待发送',failed:'失败'};
+        return map[status] || status;
+    }
+
+    function renderPagination(data) {
+        const nav = document.getElementById('pagination');
+        const links = document.getElementById('pageLinks');
+        if (data.totalPages <= 1) { nav.classList.add('d-none'); return; }
+        nav.classList.remove('d-none');
+
+        let html = '';
+        html += pageLink(currentPage - 1, '上一页', currentPage === 0);
+        for (let i = 0; i < data.totalPages; i++) {
+            html += pageLink(i, i + 1, i === currentPage);
+        }
+        html += pageLink(currentPage + 1, '下一页', currentPage >= data.totalPages - 1);
+        links.innerHTML = html;
+    }
+
+    function pageLink(page, label, disabled) {
+        const cls = disabled ? 'page-item disabled' : (page === currentPage ? 'page-item active' : 'page-item');
+        return '<li class="' + cls + '"><a class="page-link" href="#" onclick="loadRecords(' + page + ')" style="cursor:pointer">' + label + '</a></li>';
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
