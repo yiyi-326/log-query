@@ -9,9 +9,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -22,9 +24,11 @@ import java.util.stream.Collectors;
 public class LogService {
 
     private final LogEntryRepository repository;
+    private final JdbcTemplate jdbcTemplate;
 
-    public LogService(LogEntryRepository repository) {
+    public LogService(LogEntryRepository repository, JdbcTemplate jdbcTemplate) {
         this.repository = repository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional
@@ -39,17 +43,25 @@ public class LogService {
     }
 
     @Transactional
-    public List<LogEntry> saveBatch(List<LogEntry> entries, Long appId) {
-        for (LogEntry entry : entries) {
-            if (entry.getTimestamp() == null) {
-                entry.setTimestamp(LocalDateTime.now());
-            }
-            if (entry.getLevel() == null) {
-                entry.setLevel("INFO");
-            }
-            entry.setAppId(appId);
-        }
-        return repository.saveAll(entries);
+    public int[] saveBatch(List<LogEntry> entries, Long appId) {
+        if (entries.isEmpty()) return new int[0];
+        LocalDateTime now = LocalDateTime.now();
+        return jdbcTemplate.batchUpdate(
+                "INSERT INTO log_entries (timestamp, level, source, message, app_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                entries, 500,
+                (ps, entry) -> {
+                    ps.setTimestamp(1, Timestamp.valueOf(
+                            entry.getTimestamp() != null ? entry.getTimestamp() : now));
+                    ps.setString(2, entry.getLevel() != null ? entry.getLevel() : "INFO");
+                    ps.setString(3, entry.getSource());
+                    ps.setString(4, entry.getMessage());
+                    if (appId != null) {
+                        ps.setLong(5, appId);
+                    } else {
+                        ps.setNull(5, java.sql.Types.BIGINT);
+                    }
+                    ps.setTimestamp(6, Timestamp.valueOf(now));
+                });
     }
 
     public Page<LogEntry> query(LogQueryRequest request) {

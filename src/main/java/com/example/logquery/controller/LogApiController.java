@@ -38,8 +38,8 @@ public class LogApiController {
             return ApiResponse.error("日志列表不能为空");
         }
         Long appId = (Long) request.getAttribute("appId");
-        List<LogEntry> saved = logService.saveBatch(entries, appId);
-        return ApiResponse.success("成功接收 " + saved.size() + " 条日志", saved);
+        logService.saveBatch(entries, appId);
+        return ApiResponse.success("成功接收 " + entries.size() + " 条日志", entries.size());
     }
 
     @PostMapping("/single")
@@ -154,12 +154,12 @@ public class LogApiController {
                 return ApiResponse.error("未能从文件中解析出有效日志");
             }
             Long effectiveAppId = appId != null ? appId : (Long) request.getAttribute("appId");
-            List<LogEntry> saved = logService.saveBatch(entries, effectiveAppId);
+            logService.saveBatch(entries, effectiveAppId);
             Map<String, Object> data = Map.of(
                     "parsed", entries.size(),
-                    "imported", saved.size()
+                    "imported", entries.size()
             );
-            return ApiResponse.success("成功导入 " + saved.size() + " 条日志", data);
+            return ApiResponse.success("成功导入 " + entries.size() + " 条日志", data);
         } catch (Exception e) {
             return ApiResponse.error("文件解析失败: " + e.getMessage());
         }

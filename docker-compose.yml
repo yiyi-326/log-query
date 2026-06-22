@@ -1,0 +1,87 @@
+version: "3.8"
+services:
+  app:
+    build: .
+    container_name: log-query-app
+    ports:
+      - "8088:8088"
+    environment:
+      - SPRING_PROFILES_ACTIVE=h2
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  app-mysql:
+    build: .
+    container_name: log-query-app-mysql
+    ports:
+      - "8089:8088"
+    environment:
+      - SPRING_PROFILES_ACTIVE=mysql
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=logdb
+      - MYSQL_USER=loguser
+      - MYSQL_PASSWORD=logpass
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  app-pgsql:
+    build: .
+    container_name: log-query-app-pgsql
+    ports:
+      - "8090:8088"
+    environment:
+      - SPRING_PROFILES_ACTIVE=pgsql
+      - PGSQL_HOST=postgres
+      - PGSQL_PORT=5432
+      - PGSQL_DATABASE=logdb
+      - PGSQL_USER=loguser
+      - PGSQL_PASSWORD=logpass
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: log-query-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: logdb
+      MYSQL_USER: loguser
+      MYSQL_PASSWORD: logpass
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: log-query-postgres
+    environment:
+      POSTGRES_DB: logdb
+      POSTGRES_USER: loguser
+      POSTGRES_PASSWORD: logpass
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgsql_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loguser -d logdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  pgsql_data:
