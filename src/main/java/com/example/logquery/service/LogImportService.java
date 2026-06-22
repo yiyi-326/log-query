@@ -1,15 +1,19 @@
 package com.example.logquery.service;
 
 import com.example.logquery.entity.LogEntry;
+import com.example.logquery.exception.LogImportException;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -35,7 +39,7 @@ public class LogImportService {
             DateTimeFormatter.ISO_LOCAL_DATE_TIME
     };
 
-    public List<LogEntry> parse(MultipartFile file) throws Exception {
+    public List<LogEntry> parse(MultipartFile file) throws LogImportException {
         List<LogEntry> entries = new ArrayList<>();
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
@@ -54,6 +58,8 @@ public class LogImportService {
                     entries.add(entry);
                 }
             }
+        } catch (IOException e) {
+            throw new LogImportException("无法读取文件", e);
         }
         return entries;
     }
@@ -67,7 +73,7 @@ public class LogImportService {
                 }
                 return entry;
             }
-        } catch (Exception ignored) {
+        } catch (JsonProcessingException ignored) {
         }
         return null;
     }
@@ -92,7 +98,7 @@ public class LogImportService {
         for (DateTimeFormatter fmt : DATE_FORMATS) {
             try {
                 return LocalDateTime.parse(str, fmt);
-            } catch (Exception ignored) {
+            } catch (DateTimeParseException ignored) {
             }
         }
         return LocalDateTime.now();

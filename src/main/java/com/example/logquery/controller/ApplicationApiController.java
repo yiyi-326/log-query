@@ -1,12 +1,11 @@
 package com.example.logquery.controller;
 
 import com.example.logquery.dto.ApiResponse;
-import com.example.logquery.entity.Application;
+import com.example.logquery.dto.ApplicationDTO;
 import com.example.logquery.service.ApplicationService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/apps")
@@ -19,33 +18,37 @@ public class ApplicationApiController {
     }
 
     @GetMapping
-    public ApiResponse<List<Application>> list() {
-        return ApiResponse.success(appService.listAll());
+    public ApiResponse<List<ApplicationDTO>> list() {
+        List<ApplicationDTO> apps = appService.listAll().stream()
+                .map(ApplicationDTO::from)
+                .toList();
+        return ApiResponse.success(apps);
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<Application> get(@PathVariable Long id) {
+    public ApiResponse<ApplicationDTO> get(@PathVariable Long id) {
         return appService.getById(id)
+                .map(ApplicationDTO::from)
                 .map(ApiResponse::success)
                 .orElse(ApiResponse.error("应用不存在"));
     }
 
     @PostMapping
-    public ApiResponse<Application> create(@RequestBody Application app) {
-        Application created = appService.create(app);
-        return ApiResponse.success("应用创建成功", created);
+    public ApiResponse<ApplicationDTO> create(@RequestBody ApplicationDTO dto) {
+        var created = appService.create(dto.toEntity());
+        return ApiResponse.success("应用创建成功", ApplicationDTO.from(created));
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<Application> update(@PathVariable Long id, @RequestBody Application app) {
-        Application updated = appService.update(id, app);
-        return ApiResponse.success("应用更新成功", updated);
+    public ApiResponse<ApplicationDTO> update(@PathVariable Long id, @RequestBody ApplicationDTO dto) {
+        var updated = appService.update(id, dto.toEntity());
+        return ApiResponse.success("应用更新成功", ApplicationDTO.from(updated));
     }
 
     @PutMapping("/{id}/regenerate-key")
-    public ApiResponse<Application> regenerateKey(@PathVariable Long id) {
-        Application updated = appService.regenerateApiKey(id);
-        return ApiResponse.success("API Key 已重新生成", updated);
+    public ApiResponse<ApplicationDTO> regenerateKey(@PathVariable Long id) {
+        var updated = appService.regenerateApiKey(id);
+        return ApiResponse.success("API Key 已重新生成", ApplicationDTO.from(updated));
     }
 
     @DeleteMapping("/{id}")

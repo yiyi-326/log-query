@@ -1,8 +1,8 @@
 package com.example.logquery.controller;
 
+import com.example.logquery.dto.AlertRecordDTO;
+import com.example.logquery.dto.AlertRuleDTO;
 import com.example.logquery.dto.ApiResponse;
-import com.example.logquery.entity.AlertRecord;
-import com.example.logquery.entity.AlertRule;
 import com.example.logquery.service.AlertService;
 import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.*;
@@ -23,25 +23,28 @@ public class AlertApiController {
     // ==================== 告警规则 CRUD ====================
 
     @GetMapping("/rules")
-    public ApiResponse<List<AlertRule>> listRules() {
-        return ApiResponse.success(alertService.listRules());
+    public ApiResponse<List<AlertRuleDTO>> listRules() {
+        List<AlertRuleDTO> rules = alertService.listRules().stream()
+                .map(AlertRuleDTO::from)
+                .toList();
+        return ApiResponse.success(rules);
     }
 
     @GetMapping("/rules/{id}")
-    public ApiResponse<AlertRule> getRule(@PathVariable Long id) {
-        return ApiResponse.success(alertService.getRule(id));
+    public ApiResponse<AlertRuleDTO> getRule(@PathVariable Long id) {
+        return ApiResponse.success(AlertRuleDTO.from(alertService.getRule(id)));
     }
 
     @PostMapping("/rules")
-    public ApiResponse<AlertRule> createRule(@RequestBody AlertRule rule) {
-        AlertRule created = alertService.createRule(rule);
-        return ApiResponse.success("告警规则创建成功", created);
+    public ApiResponse<AlertRuleDTO> createRule(@RequestBody AlertRuleDTO dto) {
+        var created = alertService.createRule(dto.toEntity());
+        return ApiResponse.success("告警规则创建成功", AlertRuleDTO.from(created));
     }
 
     @PutMapping("/rules/{id}")
-    public ApiResponse<AlertRule> updateRule(@PathVariable Long id, @RequestBody AlertRule rule) {
-        AlertRule updated = alertService.updateRule(id, rule);
-        return ApiResponse.success("告警规则更新成功", updated);
+    public ApiResponse<AlertRuleDTO> updateRule(@PathVariable Long id, @RequestBody AlertRuleDTO dto) {
+        var updated = alertService.updateRule(id, dto.toEntity());
+        return ApiResponse.success("告警规则更新成功", AlertRuleDTO.from(updated));
     }
 
     @DeleteMapping("/rules/{id}")
@@ -56,7 +59,8 @@ public class AlertApiController {
     public ApiResponse<Map<String, Object>> listRecords(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Page<AlertRecord> result = alertService.listRecords(page, Math.min(size, 100));
+        Page<AlertRecordDTO> result = alertService.listRecords(page, Math.min(size, 100))
+                .map(AlertRecordDTO::from);
         Map<String, Object> data = Map.of(
                 "content", result.getContent(),
                 "totalPages", result.getTotalPages(),

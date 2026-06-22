@@ -94,7 +94,7 @@ public class AlertService {
         for (AlertRule rule : rules) {
             try {
                 evaluateRule(rule);
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.error("评估告警规则 [{}] 失败: {}", rule.getName(), e.getMessage());
             }
         }

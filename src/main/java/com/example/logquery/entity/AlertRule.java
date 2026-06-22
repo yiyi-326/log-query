@@ -3,6 +3,7 @@ package com.example.logquery.entity;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+@SuppressWarnings("JpaDataSourceORMInspection")
 @Entity
 @Table(name = "alert_rules")
 public class AlertRule {
@@ -20,19 +21,18 @@ public class AlertRule {
     @Column(nullable = false)
     private int threshold;
 
-    @Column(name = "window_minutes", nullable = false)
+    @Column(nullable = false)
     private int windowMinutes;
 
-    @Column(name = "webhook_url", length = 500)
+    @Column(length = 500)
     private String webhookUrl;
 
-    @Column(name = "email_recipients", length = 500)
+    @Column(length = 500)
     private String emailRecipients;
 
     @Column(nullable = false)
     private boolean enabled = true;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
     @PrePersist
@@ -42,7 +42,9 @@ public class AlertRule {
         }
     }
 
-    public AlertRule() {}
+    public AlertRule() {
+        // JPA no-arg constructor
+    }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

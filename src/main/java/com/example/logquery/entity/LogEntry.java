@@ -3,6 +3,7 @@ package com.example.logquery.entity;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+@SuppressWarnings("JpaDataSourceORMInspection")
 @Entity
 @Table(name = "log_entries", indexes = {
         @Index(name = "idx_timestamp", columnList = "timestamp"),
@@ -27,10 +28,10 @@ public class LogEntry {
     @Column(nullable = false, columnDefinition = "CLOB")
     private String message;
 
-    @Column(name = "app_id")
+    @Column
     private Long appId;
 
-    @Column(name = "created_at")
+    @Column
     private LocalDateTime createdAt;
 
     @PrePersist
@@ -40,7 +41,9 @@ public class LogEntry {
         }
     }
 
-    public LogEntry() {}
+    public LogEntry() {
+        // JPA no-arg constructor
+    }
 
     public LogEntry(LocalDateTime timestamp, String level, String source, String message) {
         this.timestamp = timestamp;

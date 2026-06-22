@@ -6,9 +6,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
@@ -47,7 +49,7 @@ public class NotificationService {
             restTemplate.postForEntity(webhookUrl, entity, String.class);
             log.info("Webhook 发送成功: {}", webhookUrl);
             return "webhook_sent";
-        } catch (Exception e) {
+        } catch (RestClientException e) {
             log.error("Webhook 发送失败: {}", e.getMessage());
             return "webhook_failed: " + e.getMessage();
         }
@@ -69,7 +71,7 @@ public class NotificationService {
             mailSender.send(message);
             log.info("邮件发送成功: {}", recipients);
             return "email_sent";
-        } catch (Exception e) {
+        } catch (MailException e) {
             log.error("邮件发送失败: {}", e.getMessage());
             return "email_failed: " + e.getMessage();
         }

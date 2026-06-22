@@ -43,8 +43,8 @@ public class LogService {
     }
 
     @Transactional
-    public int[] saveBatch(List<LogEntry> entries, Long appId) {
-        if (entries.isEmpty()) return new int[0];
+    public int[][] saveBatch(List<LogEntry> entries, Long appId) {
+        if (entries.isEmpty()) return new int[0][0];
         LocalDateTime now = LocalDateTime.now();
         return jdbcTemplate.batchUpdate(
                 "INSERT INTO log_entries (timestamp, level, source, message, app_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -156,23 +156,22 @@ public class LogService {
 
     public LogStatsResponse getStats(Long appId) {
         LocalDateTime todayStart = LocalDateTime.of(LocalDate.now(), LocalTime.MIN);
-        LogStatsResponse stats = new LogStatsResponse();
 
-        // 总量统计
+        long totalCount;
+        long todayCount;
         if (appId != null) {
             Specification<LogEntry> appSpec = (root, q, cb) -> cb.equal(root.get("appId"), appId);
             Specification<LogEntry> todaySpec = (root, q, cb) -> cb.and(
                     cb.equal(root.get("appId"), appId),
                     cb.greaterThanOrEqualTo(root.get("timestamp"), todayStart)
             );
-            stats.setTotalCount(repository.count(appSpec));
-            stats.setTodayCount(repository.count(todaySpec));
+            totalCount = repository.count(appSpec);
+            todayCount = repository.count(todaySpec);
         } else {
-            stats.setTotalCount(repository.count());
-            stats.setTodayCount(repository.countByTimestampAfter(todayStart));
+            totalCount = repository.count();
+            todayCount = repository.countByTimestampAfter(todayStart);
         }
 
-        // 级别分布
         Map<String, Long> levelDist = new LinkedHashMap<>();
         levelDist.put("DEBUG", 0L);
         levelDist.put("INFO", 0L);
@@ -181,16 +180,12 @@ public class LogService {
         for (Object[] row : repository.countByLevel(appId)) {
             levelDist.put((String) row[0], (Long) row[1]);
         }
-        stats.setLevelDistribution(levelDist);
 
-        // 来源 TOP 10
-        List<Object[]> sourceRows = repository.countBySource(appId);
-        stats.setTopSources(sourceRows.stream()
+        List<LogStatsResponse.SourceCount> topSources = repository.countBySource(appId).stream()
                 .limit(10)
                 .map(row -> new LogStatsResponse.SourceCount((String) row[0], (Long) row[1]))
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
 
-        // 今日每小时趋势
         Map<String, Long> hourlyMap = new LinkedHashMap<>();
         for (int h = 0; h < 24; h++) {
             hourlyMap.put(String.format("%02d:00", h), 0L);
@@ -202,13 +197,12 @@ public class LogService {
             String hourKey = String.format("%02d:00", e.getTimestamp().getHour());
             hourlyMap.merge(hourKey, 1L, Long::sum);
         }
-        stats.setHourlyTrend(hourlyMap.entrySet().stream()
+        List<LogStatsResponse.HourlyCount> hourlyTrend = hourlyMap.entrySet().stream()
                 .map(e -> new LogStatsResponse.HourlyCount(e.getKey(), e.getValue()))
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
 
-        // 错误率
         long totalErrors = levelDist.getOrDefault("ERROR", 0L);
-        stats.setErrorRate(stats.getTotalCount() > 0 ? (totalErrors * 100.0 / stats.getTotalCount()) : 0);
+        double errorRate = totalCount > 0 ? (totalErrors * 100.0 / totalCount) : 0;
 
         long todayErrors = 0;
         List<Object[]> todayLevels = repository.countByLevelSince(todayStart, appId);
@@ -218,9 +212,10 @@ public class LogService {
                 break;
             }
         }
-        stats.setTodayErrorRate(stats.getTodayCount() > 0 ? (todayErrors * 100.0 / stats.getTodayCount()) : 0);
+        double todayErrorRate = todayCount > 0 ? (todayErrors * 100.0 / todayCount) : 0;
 
-        return stats;
+        return new LogStatsResponse(totalCount, todayCount, levelDist,
+                topSources, hourlyTrend, errorRate, todayErrorRate);
     }
 
     public List<LogEntry> getRecentErrors(int count) {

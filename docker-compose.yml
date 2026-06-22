@@ -22,7 +22,7 @@ services:
       - MYSQL_PORT=3306
       - MYSQL_DATABASE=logdb
       - MYSQL_USER=loguser
-      - MYSQL_PASSWORD=logpass
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-changeme}
     depends_on:
       mysql:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
       - PGSQL_PORT=5432
       - PGSQL_DATABASE=logdb
       - PGSQL_USER=loguser
-      - PGSQL_PASSWORD=logpass
+      - PGSQL_PASSWORD=${PGSQL_PASSWORD:-changeme}
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,16 +49,16 @@ services:
     image: mysql:8.0
     container_name: log-query-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme}
       MYSQL_DATABASE: logdb
       MYSQL_USER: loguser
-      MYSQL_PASSWORD: logpass
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme}
     ports:
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-changeme}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -70,7 +70,7 @@ services:
     environment:
       POSTGRES_DB: logdb
       POSTGRES_USER: loguser
-      POSTGRES_PASSWORD: logpass
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     ports:
       - "5433:5432"
     volumes:

@@ -1,9 +1,10 @@
 package com.example.logquery.controller;
 
 import com.example.logquery.dto.ApiResponse;
+import com.example.logquery.dto.LogEntryDTO;
 import com.example.logquery.dto.LogQueryRequest;
 import com.example.logquery.dto.LogStatsResponse;
-import com.example.logquery.entity.LogEntry;
+import com.example.logquery.exception.LogImportException;
 import com.example.logquery.service.LogImportService;
 import com.example.logquery.service.LogService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +24,8 @@ import java.util.Map;
 @RequestMapping("/api/v1/logs")
 public class LogApiController {
 
+    private static final String APP_ID_ATTR = "appId";
+
     private final LogService logService;
     private final LogImportService importService;
 
@@ -32,23 +35,25 @@ public class LogApiController {
     }
 
     @PostMapping
-    public ApiResponse<List<LogEntry>> ingest(@RequestBody List<LogEntry> entries,
-                                              HttpServletRequest request) {
-        if (entries.isEmpty()) {
+    public ApiResponse<Integer> ingest(@RequestBody List<LogEntryDTO> dtos,
+                                       HttpServletRequest request) {
+        if (dtos.isEmpty()) {
             return ApiResponse.error("日志列表不能为空");
         }
-        Long appId = (Long) request.getAttribute("appId");
+        Long appId = (Long) request.getAttribute(APP_ID_ATTR);
+        var entries = dtos.stream().map(LogEntryDTO::toEntity).toList();
         logService.saveBatch(entries, appId);
         return ApiResponse.success("成功接收 " + entries.size() + " 条日志", entries.size());
     }
 
     @PostMapping("/single")
-    public ApiResponse<LogEntry> ingestSingle(@RequestBody LogEntry entry,
-                                              HttpServletRequest request) {
-        Long appId = (Long) request.getAttribute("appId");
+    public ApiResponse<LogEntryDTO> ingestSingle(@RequestBody LogEntryDTO dto,
+                                                  HttpServletRequest request) {
+        Long appId = (Long) request.getAttribute(APP_ID_ATTR);
+        var entry = dto.toEntity();
         entry.setAppId(appId);
-        LogEntry saved = logService.save(entry);
-        return ApiResponse.success(saved);
+        var saved = logService.save(entry);
+        return ApiResponse.success(LogEntryDTO.from(saved));
     }
 
     @GetMapping
@@ -66,19 +71,12 @@ public class LogApiController {
             @RequestParam(defaultValue = "20") int size) {
 
         LogQueryRequest req = new LogQueryRequest();
-        req.setKeyword(keyword);
-        req.setKeywords(keywords);
-        req.setKeywordLogic(keywordLogic);
-        req.setRegex(regex);
-        req.setLevel(level);
-        req.setSource(source);
-        req.setAppId(appId);
-        req.setStartTime(startTime);
-        req.setEndTime(endTime);
+        applyTextFilters(req, keyword, keywords, keywordLogic, regex);
+        applyScopeFilters(req, level, source, appId, startTime, endTime);
         req.setPage(page);
         req.setSize(Math.min(size, 100));
 
-        Page<LogEntry> result = logService.query(req);
+        Page<LogEntryDTO> result = logService.query(req).map(LogEntryDTO::from);
         Map<String, Object> data = Map.of(
                 "content", result.getContent(),
                 "totalPages", result.getTotalPages(),
@@ -90,7 +88,7 @@ public class LogApiController {
     }
 
     @GetMapping("/export")
-    public ResponseEntity<?> export(
+    public ResponseEntity<Object> export(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) List<String> keywords,
             @RequestParam(required = false, defaultValue = "OR") String keywordLogic,
@@ -103,25 +101,19 @@ public class LogApiController {
             @RequestParam(defaultValue = "csv") String format) {
 
         LogQueryRequest req = new LogQueryRequest();
-        req.setKeyword(keyword);
-        req.setKeywords(keywords);
-        req.setKeywordLogic(keywordLogic);
-        req.setRegex(regex);
-        req.setLevel(level);
-        req.setSource(source);
-        req.setAppId(appId);
-        req.setStartTime(startTime);
-        req.setEndTime(endTime);
+        applyTextFilters(req, keyword, keywords, keywordLogic, regex);
+        applyScopeFilters(req, level, source, appId, startTime, endTime);
         req.setPage(0);
         req.setSize(Integer.MAX_VALUE);
 
-        List<LogEntry> logs = logService.queryAll(req);
+        var logs = logService.queryAll(req);
 
         if ("json".equalsIgnoreCase(format)) {
+            var dtos = logs.stream().map(LogEntryDTO::from).toList();
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=logs-export.json")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(ApiResponse.success(logs));
+                    .body(ApiResponse.success(dtos));
         } else {
             String csv = logService.exportCsv(logs);
             return ResponseEntity.ok()
@@ -131,11 +123,30 @@ public class LogApiController {
         }
     }
 
+    private void applyTextFilters(LogQueryRequest req, String keyword,
+            List<String> keywords, String keywordLogic, String regex) {
+        req.setKeyword(keyword);
+        req.setKeywords(keywords);
+        req.setKeywordLogic(keywordLogic);
+        req.setRegex(regex);
+    }
+
+    private void applyScopeFilters(LogQueryRequest req, String level, String source,
+            Long appId, LocalDateTime startTime, LocalDateTime endTime) {
+        req.setLevel(level);
+        req.setSource(source);
+        req.setAppId(appId);
+        req.setStartTime(startTime);
+        req.setEndTime(endTime);
+    }
+
     @GetMapping("/errors/recent")
-    public ApiResponse<List<LogEntry>> recentErrors(
+    public ApiResponse<List<LogEntryDTO>> recentErrors(
             @RequestParam(defaultValue = "20") int count,
             @RequestParam(required = false) Long appId) {
-        return ApiResponse.success(logService.getRecentErrors(Math.min(count, 200), appId));
+        var dtos = logService.getRecentErrors(Math.min(count, 200), appId)
+                .stream().map(LogEntryDTO::from).toList();
+        return ApiResponse.success(dtos);
     }
 
     @GetMapping("/stats")
@@ -149,18 +160,18 @@ public class LogApiController {
                                                        @RequestParam(required = false) Long appId,
                                                        HttpServletRequest request) {
         try {
-            List<LogEntry> entries = importService.parse(file);
+            var entries = importService.parse(file);
             if (entries.isEmpty()) {
                 return ApiResponse.error("未能从文件中解析出有效日志");
             }
-            Long effectiveAppId = appId != null ? appId : (Long) request.getAttribute("appId");
+            Long effectiveAppId = appId != null ? appId : (Long) request.getAttribute(APP_ID_ATTR);
             logService.saveBatch(entries, effectiveAppId);
             Map<String, Object> data = Map.of(
                     "parsed", entries.size(),
                     "imported", entries.size()
             );
             return ApiResponse.success("成功导入 " + entries.size() + " 条日志", data);
-        } catch (Exception e) {
+        } catch (LogImportException e) {
             return ApiResponse.error("文件解析失败: " + e.getMessage());
         }
     }

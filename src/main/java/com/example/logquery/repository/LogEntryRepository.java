@@ -31,11 +31,6 @@ public interface LogEntryRepository extends JpaRepository<LogEntry, Long>, JpaSp
     @Query("SELECT e.source, COUNT(e) FROM LogEntry e WHERE (:appId IS NULL OR e.appId = :appId) GROUP BY e.source ORDER BY COUNT(e) DESC")
     List<Object[]> countBySource(@Param("appId") Long appId);
 
-    @Query("SELECT e.source, COUNT(e) FROM LogEntry e WHERE e.timestamp >= :since AND (:appId IS NULL OR e.appId = :appId) GROUP BY e.source ORDER BY COUNT(e) DESC")
-    List<Object[]> countBySourceSince(@Param("since") LocalDateTime since, @Param("appId") Long appId);
-
-    long countByTimestampBetween(LocalDateTime start, LocalDateTime end);
-
     void deleteByTimestampBefore(LocalDateTime before);
 
     List<LogEntry> findByLevelOrderByTimestampDesc(String level, Pageable pageable);
